@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Turbo 任务缓存
+.turbo/
+
+# Electron packaging
+release/
+
+# Test coverage
+coverage/
+playwright-report/
+test-results/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Logs & temp
+logs/
+*.log
+.tmp/
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Vite 依赖预构建缓存
+.vite/
+
+# 手动备份文件（如 *.pptx.bak_20261013、*.bak2_20261014）
+*.bak*
+
+# 临时监控 / 重写工作区
+.ghost_watch/
+.rewrite/
+
+# 临时产物输出目录
+code_output_test/
+
+# 运行时 SQLite 数据库文件
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
