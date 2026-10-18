@@ -5,7 +5,7 @@
 import { app, BrowserWindow, ipcMain, protocol, safeStorage } from 'electron';
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
-import { createMainWindow, ensureSingleInstance } from './window.js';
+import { createMainWindow, ensureSingleInstance, registerWindowControls } from './window.js';
 import { createTray } from './tray.js';
 import { registerIpc, broadcastRuntimeEvent } from './ipc/index.js';
 import { openDatabase } from './db/database.js';
@@ -302,6 +302,7 @@ async function bootstrap(): Promise<void> {
 
   // 6. 窗口 + 托盘 + IPC
   mainWindow = createMainWindow();
+  registerWindowControls(mainWindow); // 自定义标题栏窗口控制（win:minimize 等）
   const tray = createTray(() => mainWindow);
   registerIpc({
     store,

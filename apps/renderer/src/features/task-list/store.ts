@@ -103,3 +103,34 @@ export function taskBadge(t: Task): { text: string; tone: 'neutral' | 'running' 
 }
 
 export type { TaskTrigger };
+
+/** 相对时间（WorkBuddy 图1：7天前 / 5天前 / 刚刚） */
+export function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}个月前`;
+  return `${Math.floor(months / 12)}年前`;
+}
+
+/** 按新旧分桶（WorkBuddy 图1：任务按时间排序展示；已完成折叠） */
+export function groupByRecency(tasks: Task[]): { completed: Task[] } {
+  const completed = tasks
+    .filter((t) => t.status === 'completed')
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  return { completed };
+}
+
+/** 任务状态绿点（活跃/失败/空闲） */
+export function taskStatusDot(t: Task): string {
+  if (t.status === 'running' || t.status === 'planning') return 'wb-sidebar__task-dot--green';
+  if (t.status === 'failed') return 'wb-sidebar__task-dot--red';
+  if (t.status === 'paused' || t.status === 'interrupted' || t.status === 'awaiting-approval') return 'wb-sidebar__task-dot--amber';
+  return '';
+}

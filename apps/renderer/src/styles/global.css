@@ -50,54 +50,124 @@ select {
   background: transparent;
 }
 
-/* ─────────── 三栏工作台骨架 ─────────── */
+/* ─────────── 工作台骨架（WorkBuddy 式：自定义标题栏 + 左栏 + 主区 + 右侧成果区） ─────────── */
 .wb-workbench {
   display: grid;
-  grid-template-rows: var(--wb-topbar-height) 1fr var(--wb-statusbar-height);
+  grid-template-rows: var(--wb-titlebar-height) 1fr var(--wb-statusbar-height);
   grid-template-columns: var(--wb-sidebar-width) 1fr var(--wb-artifact-width);
   grid-template-areas:
-    "topbar topbar topbar"
+    "titlebar titlebar titlebar"
     "sidebar chat artifacts"
     "statusbar statusbar statusbar";
   height: 100%;
   overflow: hidden;
 }
 
-.wb-workbench--sidebar-collapsed {
-  grid-template-columns: var(--wb-sidebar-collapsed-width) 1fr var(--wb-artifact-width);
-}
-
 .wb-workbench--artifacts-hidden {
   grid-template-columns: var(--wb-sidebar-width) 1fr 0;
 }
 
-.wb-topbar { grid-area: topbar; }
+.wb-titlebar { grid-area: titlebar; }
 .wb-sidebar { grid-area: sidebar; min-height: 0; }
 .wb-chat { grid-area: chat; min-width: 480px; min-height: 0; overflow: hidden; }
 .wb-artifacts { grid-area: artifacts; min-width: 0; min-height: 0; }
 .wb-statusbar { grid-area: statusbar; }
 
-/* ─────────── 顶栏 ─────────── */
-.wb-topbar {
+/* ─────────── 自定义标题栏（frameless：菜单 + 拖拽区 + 窗口控制） ─────────── */
+.wb-titlebar {
   display: flex;
   align-items: center;
-  gap: var(--wb-space-3);
-  padding: 0 var(--wb-space-4);
+  gap: 2px;
+  padding-left: var(--wb-space-3);
   background: var(--wb-bg-base);
   border-bottom: 1px solid var(--wb-border);
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
-.wb-topbar__logo {
+.wb-titlebar__logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: var(--wb-space-2);
+  font-weight: 600;
+  font-size: var(--wb-font-size-sm);
+  color: var(--wb-text-primary);
+  -webkit-app-region: no-drag;
+}
+.wb-titlebar__logo-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--wb-color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wb-titlebar__menu { position: relative; -webkit-app-region: no-drag; }
+.wb-titlebar__menu-btn {
+  padding: 4px 10px;
+  font-size: var(--wb-font-size-xs);
+  color: var(--wb-text-secondary);
+  border-radius: 6px;
+}
+.wb-titlebar__menu-btn:hover,
+.wb-titlebar__menu-btn--open {
+  background: var(--wb-bg-pill);
+  color: var(--wb-text-primary);
+}
+.wb-titlebar__menu-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 190px;
+  background: var(--wb-bg-base);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-md);
+  box-shadow: var(--wb-shadow-md);
+  padding: 4px;
+  z-index: 1200;
+}
+.wb-titlebar__menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: var(--wb-font-size-xs);
+  border-radius: 6px;
+  color: var(--wb-text-primary);
+}
+.wb-titlebar__menu-item:hover { background: var(--wb-bg-pill); }
+.wb-titlebar__menu-item--disabled { color: var(--wb-text-disabled); pointer-events: none; }
+.wb-titlebar__menu-hint { float: right; color: var(--wb-text-disabled); margin-left: 16px; }
+
+.wb-titlebar__spacer { flex: 1; }
+
+.wb-titlebar__actions {
   display: flex;
   align-items: center;
   gap: var(--wb-space-2);
-  font-weight: 600;
-  font-size: var(--wb-font-size-lg);
-  color: var(--wb-color-primary);
-  cursor: pointer;
+  padding: 0 var(--wb-space-3);
+  -webkit-app-region: no-drag;
 }
 
-.wb-topbar__spacer { flex: 1; }
+/* 窗口控制（右上角：最小化 / 最大化切换 / 关闭） */
+.wb-titlebar__win { display: flex; -webkit-app-region: no-drag; }
+.wb-titlebar__win-btn {
+  width: 46px;
+  height: var(--wb-titlebar-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wb-text-secondary);
+  font-size: var(--wb-font-size-xs);
+}
+.wb-titlebar__win-btn:hover { background: var(--wb-bg-pill); color: var(--wb-text-primary); }
+.wb-titlebar__win-btn--close:hover { background: var(--wb-color-danger); color: #fff; }
 
 /* ─────────── 状态栏 ─────────── */
 .wb-statusbar {
@@ -136,17 +206,17 @@ select {
   border: 1px solid transparent;
   white-space: nowrap; /* 按钮文字禁止折行（修复"选择目/录"、"打/开"两行显示） */
 }
-.wb-btn--primary { background: var(--wb-color-primary); color: var(--wb-text-inverse); }
-.wb-btn--primary:hover { background: var(--wb-color-primary-hover); }
+.wb-btn--primary { background: var(--wb-color-dark); color: var(--wb-text-inverse); }
+.wb-btn--primary:hover { background: var(--wb-color-dark-hover); }
 .wb-btn--default {
   background: var(--wb-bg-base);
   border-color: var(--wb-border);
   color: var(--wb-text-primary);
 }
-.wb-btn--default:hover { border-color: var(--wb-color-primary); color: var(--wb-color-primary); }
+.wb-btn--default:hover { border-color: var(--wb-color-dark); color: var(--wb-text-primary); }
 .wb-btn--danger { background: var(--wb-color-danger); color: var(--wb-text-inverse); }
 .wb-btn--ghost { color: var(--wb-text-secondary); }
-.wb-btn--ghost:hover { color: var(--wb-color-primary); background: var(--wb-bg-panel); }
+.wb-btn--ghost:hover { color: var(--wb-text-primary); background: var(--wb-bg-pill); }
 .wb-btn--small { font-size: var(--wb-font-size-xs); padding: 3px 8px; }
 .wb-btn--large { font-size: var(--wb-font-size-lg); padding: 8px 20px; }
 .wb-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -162,11 +232,11 @@ select {
   line-height: 18px;
 }
 .wb-badge--neutral { background: var(--wb-bg-panel); color: var(--wb-text-secondary); }
-.wb-badge--running { background: rgba(0, 82, 217, .10); color: var(--wb-color-primary); }
-.wb-badge--success { background: rgba(43, 164, 113, .12); color: var(--wb-color-success); }
-.wb-badge--warning { background: rgba(227, 115, 24, .12); color: var(--wb-color-warning); }
-.wb-badge--danger { background: rgba(213, 73, 65, .12); color: var(--wb-color-danger); }
-.wb-badge--info { background: rgba(0, 82, 217, .08); color: var(--wb-color-primary); }
+.wb-badge--running { background: rgba(0, 181, 120, .10); color: #00865A; }
+.wb-badge--success { background: rgba(0, 181, 120, .12); color: #00865A; }
+.wb-badge--warning { background: rgba(255, 143, 31, .12); color: #C2680E; }
+.wb-badge--danger { background: rgba(245, 63, 63, .10); color: var(--wb-color-danger); }
+.wb-badge--info { background: rgba(0, 181, 120, .08); color: #00865A; }
 
 /* ─────────── Spinner ─────────── */
 .wb-spinner-wrap { display: inline-flex; align-items: center; gap: var(--wb-space-1); }

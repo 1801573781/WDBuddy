@@ -163,17 +163,25 @@ export function Composer(): React.ReactElement {
           {enhancing ? '增强中…' : '💡 提示词增强'}
         </button>
 
-        <button className="wb-btn wb-btn--ghost" title="附件：把文件路径引用进指令" onClick={() => undefined}>
-          📎
+        <button className="wb-btn wb-btn--ghost" title="附件：把文件路径引用进指令（待接入）" onClick={() => undefined}>
+          ＋
         </button>
 
         <label className="wb-badge wb-badge--info" title="Max 模式：长文档/代码/调研类任务使用更大上下文窗口的模型，效果更好但更耗积分">
-          Max 模式
+          Max
           <input type="checkbox" checked={maxMode} onChange={(e) => setMaxMode(e.target.checked)} />
         </label>
 
-        <button className="wb-btn wb-btn--primary" onClick={() => void send()} disabled={!text.trim()}>
-          发送 ➤
+        {/* 深色圆形发送钮（WorkBuddy 图1） */}
+        <button
+          className="wb-composer__send-round"
+          title="发送（Enter 发送 / Shift+Enter 换行）"
+          disabled={!text.trim()}
+          onClick={() => void send()}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
       </div>
     </div>

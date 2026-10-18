@@ -1,21 +1,27 @@
-/* WDBuddy 设计变量（§4.8 视觉规格，生成样式必须基于 tokens.css） */
+/* WDBuddy 设计变量 — WorkBuddy 视觉规格（深黑主操作 + 青绿强调）
+ * 生成样式必须基于 tokens.css（§4.8）
+ */
 :root {
-  --wb-color-primary: #0052D9;   /* 主色 */
-  --wb-color-primary-hover: #1C6FE0;
-  --wb-color-success: #2BA471;
-  --wb-color-warning: #E37318;
-  --wb-color-danger:  #D54941;
+  --wb-color-primary: #00B578;        /* 强调绿：logo / 状态点 / 选中描边 / 链接 */
+  --wb-color-primary-hover: #00A26B;
+  --wb-color-dark: #1F1F1F;           /* 主操作深黑：选中类别胶囊 / 发送钮 / 主按钮 */
+  --wb-color-dark-hover: #2B2B2B;
+  --wb-color-success: #00B578;
+  --wb-color-warning: #FF8F1F;
+  --wb-color-danger:  #F53F3F;
 
-  --wb-bg-base:  #FFFFFF;
-  --wb-bg-panel: #F3F5F8;
-  --wb-bg-chat-user: #E8F0FE;
+  --wb-bg-base:  #FFFFFF;             /* 卡片 / 侧栏 / 标题栏 */
+  --wb-bg-page:  #F7F8FA;             /* 主内容区页面底色 */
+  --wb-bg-panel: #F7F8FA;             /* 兼容旧引用（同页面底色） */
+  --wb-bg-pill:  #F2F3F5;             /* 浅灰胶囊 / 悬浮底 */
+  --wb-bg-chat-user: #F2F3F5;         /* 用户消息气泡 */
 
-  --wb-border: #E1E5EB;
+  --wb-border: #E5E7EB;
 
-  --wb-text-primary: rgba(0, 0, 0, .88);
-  --wb-text-secondary: rgba(0, 0, 0, .55);
-  --wb-text-disabled: rgba(0, 0, 0, .35);
-  --wb-text-inverse: rgba(255, 255, 255, .95);
+  --wb-text-primary: rgba(17, 20, 24, .92);
+  --wb-text-secondary: rgba(17, 20, 24, .55);
+  --wb-text-disabled: rgba(17, 20, 24, .35);
+  --wb-text-inverse: rgba(255, 255, 255, .96);
 
   --wb-radius-md: 8px;
   --wb-radius-sm: 4px;
@@ -34,34 +40,37 @@
   --wb-font-size-lg: 16px;
   --wb-font-size-xl: 18px;
 
-  /* 布局常量（§4.8） */
-  --wb-topbar-height: 48px;
-  --wb-statusbar-height: 28px;
-  --wb-sidebar-width: 240px;
-  --wb-sidebar-collapsed-width: 64px;
-  --wb-artifact-width: 420px;
+  /* 布局常量（WorkBuddy 式骨架） */
+  --wb-titlebar-height: 40px;         /* 自定义标题栏 */
+  --wb-statusbar-height: 28px;        /* 底部状态栏 */
+  --wb-sidebar-width: 232px;          /* 左栏 */
+  --wb-artifact-width: 400px;         /* 成果区默认宽 */
   --wb-artifact-min: 320px;
   --wb-artifact-max: 640px;
-  --wb-composer-min-height: 120px;
+  --wb-composer-min-height: 96px;
 
   --wb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .06);
   --wb-shadow-md: 0 4px 12px rgba(0, 0, 0, .10);
 }
 
 [data-theme="dark"] {
-  --wb-color-primary: #3B7CDB;
-  --wb-color-primary-hover: #5B94E3;
+  --wb-color-primary: #00C389;
+  --wb-color-primary-hover: #00D395;
+  --wb-color-dark: #E8EAED;
+  --wb-color-dark-hover: #F4F5F7;
 
-  --wb-bg-base:  #11151C;
-  --wb-bg-panel: #1A212B;
-  --wb-bg-chat-user: #1E2A3C;
+  --wb-bg-base:  #17191E;
+  --wb-bg-page:  #101216;
+  --wb-bg-panel: #1E2127;
+  --wb-bg-pill:  #23262D;
+  --wb-bg-chat-user: #23262D;
 
-  --wb-border: #2A3341;
+  --wb-border: #2A2E36;
 
   --wb-text-primary: rgba(255, 255, 255, .90);
   --wb-text-secondary: rgba(255, 255, 255, .55);
   --wb-text-disabled: rgba(255, 255, 255, .35);
-  --wb-text-inverse: rgba(0, 0, 0, .90);
+  --wb-text-inverse: rgba(17, 20, 24, .92);
 
   --wb-shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
   --wb-shadow-md: 0 4px 12px rgba(0, 0, 0, .45);

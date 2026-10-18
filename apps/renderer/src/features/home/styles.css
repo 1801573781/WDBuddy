@@ -1,0 +1,198 @@
+/* home feature 样式 — WorkBuddy 式首页（深黑主操作 + 青绿强调） */
+
+.wb-home {
+  position: relative;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--wb-bg-page);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px 32px;
+}
+
+/* 营销浮动胶囊（右上角） */
+.wb-home__float-ad {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--wb-bg-base);
+  border: 1px solid var(--wb-border);
+  font-size: var(--wb-font-size-xs);
+  color: var(--wb-text-primary);
+  box-shadow: var(--wb-shadow-sm);
+}
+.wb-home__float-ad:hover { border-color: var(--wb-color-primary); }
+.wb-home__float-ad-icon { font-size: 14px; }
+
+/* Hero：大标题 + 吉祥物 */
+.wb-home__hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--wb-space-2);
+  margin-bottom: var(--wb-space-4);
+}
+.wb-home__title {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--wb-text-primary);
+  letter-spacing: .5px;
+}
+.wb-home__mascot { margin-left: var(--wb-space-2); }
+
+/* 类别胶囊（选中深黑底白字） */
+.wb-home__categories {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin-bottom: var(--wb-space-3);
+}
+.wb-home__cat {
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-size: var(--wb-font-size-sm);
+  background: var(--wb-bg-pill);
+  color: var(--wb-text-primary);
+  transition: all .15s ease;
+}
+.wb-home__cat:hover { background: #E8EAEE; }
+.wb-home__cat--active {
+  background: var(--wb-color-dark);
+  color: var(--wb-text-inverse);
+}
+
+/* 快捷功能（横向滚动） */
+.wb-home__quick {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  max-width: 560px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: var(--wb-space-4);
+  scrollbar-width: none;
+}
+.wb-home__quick::-webkit-scrollbar { display: none; }
+.wb-home__quick-chip {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: var(--wb-bg-pill);
+  font-size: var(--wb-font-size-xs);
+  color: var(--wb-text-secondary);
+  white-space: nowrap;
+}
+.wb-home__quick-chip:hover { color: var(--wb-text-primary); background: #E8EAEE; }
+.wb-home__quick-arrow {
+  flex-shrink: 0;
+  color: var(--wb-text-disabled);
+  font-size: var(--wb-font-size-lg);
+}
+
+/* 输入卡 */
+.wb-home__card {
+  width: 100%;
+  max-width: 640px;
+  background: var(--wb-bg-base);
+  border: 1px solid var(--wb-border);
+  border-radius: 16px;
+  padding: var(--wb-space-3);
+  box-shadow: var(--wb-shadow-sm);
+}
+.wb-home__input {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: var(--wb-font-size-md);
+  font-family: inherit;
+  color: var(--wb-text-primary);
+  background: transparent;
+  min-height: 56px;
+  max-height: 180px;
+  line-height: 1.6;
+  padding: var(--wb-space-2) var(--wb-space-2) 0;
+}
+.wb-home__input::placeholder { color: var(--wb-text-disabled); }
+
+.wb-home__card-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-2);
+  margin-top: var(--wb-space-2);
+  padding: 0 var(--wb-space-1);
+}
+.wb-home__plus {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--wb-border);
+  color: var(--wb-text-secondary);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb-home__plus:hover { border-color: var(--wb-color-primary); color: var(--wb-color-primary); }
+.wb-home__card-spacer { flex: 1; }
+
+.wb-home__model {
+  max-width: 150px;
+  font-size: var(--wb-font-size-xs);
+  color: var(--wb-text-secondary);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+}
+.wb-home__model option { color: var(--wb-text-primary); background: var(--wb-bg-base); }
+
+.wb-home__mic {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--wb-text-secondary);
+  font-size: 14px;
+}
+.wb-home__mic:hover { color: var(--wb-color-primary); background: var(--wb-bg-pill); }
+
+/* 深色圆形发送钮 */
+.wb-home__send {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--wb-color-dark);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s ease;
+}
+.wb-home__send:hover { background: var(--wb-color-dark-hover); }
+.wb-home__send.is-disabled { opacity: .35; cursor: not-allowed; }
+
+/* 选项行：工作空间 / 权限 */
+.wb-home__options {
+  display: flex;
+  gap: var(--wb-space-2);
+  margin-top: var(--wb-space-2);
+}
+.wb-home__option {
+  font-size: var(--wb-font-size-xs);
+  color: var(--wb-text-secondary);
+  background: var(--wb-bg-page);
+  border: 1px solid var(--wb-border);
+  border-radius: 8px;
+  padding: 3px 10px;
+  outline: none;
+  cursor: pointer;
+}
+.wb-home__option:hover { border-color: var(--wb-color-primary); }

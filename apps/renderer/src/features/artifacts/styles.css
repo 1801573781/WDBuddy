@@ -1,4 +1,4 @@
-/* artifacts feature 样式（§4.5） */
+/* artifacts feature 样式 — WorkBuddy 式配色（青绿 Tab 下划线） */
 .wb-artifacts__inner {
   height: 100%;
   display: flex;
@@ -10,6 +10,7 @@
 .wb-artifacts__tabs {
   display: flex;
   border-bottom: 1px solid var(--wb-border);
+  background: var(--wb-bg-base);
 }
 .wb-artifacts__tab {
   flex: 1;
@@ -19,7 +20,7 @@
   border-bottom: 2px solid transparent;
 }
 .wb-artifacts__tab--active {
-  color: var(--wb-color-primary);
+  color: #00865A;
   border-bottom-color: var(--wb-color-primary);
   font-weight: 500;
 }
@@ -27,7 +28,7 @@
   display: inline-block;
   margin-left: 4px;
   font-size: var(--wb-font-size-xs);
-  background: var(--wb-bg-panel);
+  background: var(--wb-bg-pill);
   border-radius: 999px;
   padding: 0 6px;
 }
@@ -74,8 +75,8 @@
 }
 .wb-preview__chip--active {
   border-color: var(--wb-color-primary);
-  color: var(--wb-color-primary);
-  background: rgba(0, 82, 217, .06);
+  color: #00865A;
+  background: rgba(0, 181, 120, .08);
 }
 .wb-preview__iframe,
 .wb-browser__webview {

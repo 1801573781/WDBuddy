@@ -3,7 +3,7 @@
  * BrowserWindow：contextIsolation:true, nodeIntegration:false, sandbox:true
  * CSP 严格；开发模式加载 Vite dev server，生产加载本地文件。
  */
-import { BrowserWindow, app, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, shell } from 'electron';
 import * as path from 'node:path';
 
 const DEV_SERVER_URL = process.env['WB_DEV_SERVER_URL'] ?? 'http://localhost:5173';
@@ -20,6 +20,8 @@ export function createMainWindow(): BrowserWindow {
     autoHideMenuBar: true,
     title: 'WDBuddy',
     backgroundColor: '#FFFFFF',
+    frame: false,               // 自定义标题栏（WorkBuddy 式菜单+窗口控制）
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,   // 隔离
@@ -67,6 +69,33 @@ export function createMainWindow(): BrowserWindow {
   }
 
   return win;
+}
+
+/**
+ * 窗口控制 IPC（自定义标题栏按钮）
+ * - win:minimize / win:close
+ * - win:toggleMaximize：最大化↔还原，返回当前是否最大化（渲染层按钮图标切换）
+ */
+export function registerWindowControls(win: BrowserWindow): void {
+  ipcMain.removeHandler('win:minimize');
+  ipcMain.removeHandler('win:toggleMaximize');
+  ipcMain.removeHandler('win:close');
+  ipcMain.handle('win:minimize', () => {
+    win.minimize();
+    return { ok: true };
+  });
+  ipcMain.handle('win:toggleMaximize', () => {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+    return { maximized: win.isMaximized() };
+  });
+  ipcMain.handle('win:close', () => {
+    win.close(); // close 事件钩子仍走"最小化到托盘"逻辑（FR-22）
+    return { ok: true };
+  });
 }
 
 /** 单实例锁（避免多开导致 SQLite 锁冲突） */

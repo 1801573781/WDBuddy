@@ -107,15 +107,8 @@ export function ChatPanel(): React.ReactElement {
         )}
       </div>
 
-      {/* 2. 消息列表（虚拟滚动容器） */}
+      {/* 2. 消息列表（虚拟滚动容器；空态欢迎页由首页 HomeView 承担，不再重复） */}
       <div className="wb-chat__messages" ref={listRef}>
-        {messages.length === 0 && !plan && (
-          <div className="wb-chat__welcome">
-            <div className="wb-chat__welcome-logo">◆</div>
-            <div className="wb-chat__welcome-title">你好，我是 WDBuddy</div>
-            <div className="wb-chat__welcome-desc">说一句话，我直接把活干了——文档、表格、PPT、网页、调研报告……</div>
-          </div>
-        )}
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}

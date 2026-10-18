@@ -13,11 +13,9 @@ export type SidePanelName = 'tasks' | 'skills' | 'preferences' | 'settings' | 'r
 export type RuntimeState = 'idle' | 'running' | 'offline';
 
 interface AppStore {
-  // 布局
-  sidebarCollapsed: boolean;
+  // 布局（WorkBuddy 式：左栏常驻，成果区可隐藏）
   artifactsHidden: boolean;
   artifactWidth: number;
-  toggleSidebar(): void;
   toggleArtifacts(): void;
   setArtifactWidth(w: number): void;
 
@@ -60,10 +58,8 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
-  sidebarCollapsed: false,
   artifactsHidden: false,
-  artifactWidth: 420,
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  artifactWidth: 400,
   toggleArtifacts: () => set((s) => ({ artifactsHidden: !s.artifactsHidden })),
   setArtifactWidth: (w) => set({ artifactWidth: w }),
 

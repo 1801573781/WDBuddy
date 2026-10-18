@@ -17,6 +17,7 @@ import '../features/new-task/styles.css';
 import '../features/settings/styles.css';
 import '../features/skills/styles.css';
 import '../features/preferences/styles.css';
+import '../features/home/styles.css';
 
 export function App(): React.ReactElement {
   // 主题跟随设置（light/dark/auto，§4.7）

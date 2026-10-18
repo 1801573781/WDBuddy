@@ -97,6 +97,12 @@ const api = {
 
   // ─────────── 平台信息 ───────────
   platform: process.platform,
+
+  // ─────────── 窗口控制（自定义标题栏） ───────────
+  winMinimize: (): Promise<{ ok: true }> => ipcRenderer.invoke('win:minimize'),
+  winToggleMaximize: (): Promise<{ maximized: boolean }> =>
+    ipcRenderer.invoke('win:toggleMaximize'),
+  winClose: (): Promise<{ ok: true }> => ipcRenderer.invoke('win:close'),
 };
 
 export type WdBuddyApi = typeof api;
