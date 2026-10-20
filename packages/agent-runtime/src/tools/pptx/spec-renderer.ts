@@ -143,6 +143,58 @@ SHAPE_MAP = {
 
 ALIGN_MAP = {'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER, 'right': PP_ALIGN.RIGHT}
 
+def image_pixel_size(p):
+    try:
+        from PIL import Image
+        with Image.open(p) as im:
+            return im.size
+    except Exception:
+        return None
+
+def add_picture_fill(shapes, p):
+    # 铺满整页（不 contain）：文字槽坐标是相对**该页图像**归一化的，一旦
+    # 等比留白居中，背景与文字就会整体错位几个百分点——铺满才能保证
+    # "文字压在原图文字位置上"。拼贴页本身就是按页面边界裁净的，形变可忽略。
+    try:
+        shapes.add_picture(p, Inches(0), Inches(0), Inches(PAGE_W), Inches(PAGE_H))
+    except Exception:
+        pass
+
+def render_slide_visual(sl, src):
+    # 视觉模式：参考图像素铺底 + 可编辑文字槽。
+    # 从图片里"程序化重建"星空/渐变/光晕/照片/发光图标在数学上不可能
+    #（图元只有矩形/圆/线）——此前只能走矢量重建，必然产出与参考图毫不相干
+    # 的页面。这不是提示词能修的，是表达力上限：不可重建的交给像素，用户
+    # 真正要改的文字交给文本框，二者叠加才既像又能改。
+    s = prs.slides.add_slide(BLANK)
+    add_shape(s.shapes, MSO_SHAPE.RECTANGLE, 0, 0, PAGE_W+0.01, PAGE_H+0.01, BG, None, 0)
+    if src:
+        add_picture_fill(s.shapes, src)
+    for slot in sl['slots']:
+        # 只落文字：装饰已由背景像素承载，再画一遍图元等于在照片上贴假方块
+        if slot.get('type') != 'text':
+            continue
+        x = slot['x']/100.0 * PAGE_W
+        y = slot['y']/100.0 * PAGE_H
+        w = slot['w']/100.0 * PAGE_W
+        h = slot['h']/100.0 * PAGE_H
+        # 背景遮罩：用紧邻背景色盖掉原图像素文字，否则原图字与可编辑字重影
+        mask = slot.get('bg')
+        if mask:
+            pad = 0.02
+            mx = max(0.0, x - pad)
+            my = max(0.0, y - pad)
+            add_shape(s.shapes, MSO_SHAPE.RECTANGLE, mx, my,
+                      min(PAGE_W - mx, w + pad*2), min(PAGE_H - my, h + pad*2),
+                      hex2rgb(mask), None, 0)
+        add_text(s.shapes, x, y, w, h, slot.get('text') or '占位',
+                 slot.get('size', 14), hex2rgb(slot.get('color') or '#ffffff'),
+                 slot.get('bold', False), ALIGN_MAP.get(slot.get('align') or 'left', PP_ALIGN.LEFT),
+                 slot.get('spc') or 0,
+                 anchor_mid=(slot.get('role') in ('number', 'title') and
+                             slot.get('align') == 'center'))
+    return s
+
 def render_slide(sl):
     s = prs.slides.add_slide(BLANK)
     # 页面背景
@@ -173,11 +225,16 @@ def render_slide(sl):
                      anchor_mid=(slot.get('role') == 'number'))
     return s
 
+MODE = (spec.get('mode') or 'visual').lower()
+GLOBAL_IMG = spec.get('image')
 for sl in spec['slides']:
-    render_slide(sl)
+    if MODE == 'vector':
+        render_slide(sl)
+    else:
+        render_slide_visual(sl, sl.get('sourceImage') or GLOBAL_IMG)
 
 prs.save(OUT)
-print('RENDER_OK slides=' + str(len(spec['slides'])))
+print('RENDER_OK mode=' + MODE + ' slides=' + str(len(spec['slides'])))
 
 # ══ 引擎级自检：复刻 scanTemplate + guessRole + guessKind（与 template-clone.ts 对齐）══
 def walk(shapes):
@@ -194,10 +251,12 @@ def guess_role(y, w, paras):
     if re.match(r'^N\\.\\d+', first): return 'decor'
     if re.match(r'^(主讲人|汇报时间|时间)', first): return 'footer'
     if re.match(r'^(PART|THANKS)', first, re.I): return 'decor'
+    if re.match(r'^(.{1,4}[/／·|]){2,}', first.strip()): return 'decor'
     if re.match(r'^目\\s*录$', first.strip()): return 'title'
     if re.match(r'^CONTENTS$', first.strip(), re.I): return 'decor'
     if re.match(r'^\\d{1,2}$', first): return 'number'
     if re.match(r'^\\d{2,4}X?[-/年]\\d{1,2}([-/月]\\d{1,2}日?)?$', first.strip()): return 'date'
+    if re.search(r'在此输入', first): return 'title' if re.search(r'主标题|标题', first) else 'item-body'
     if re.search(r'添加.*标题|点击.*标题', first): return 'item-title'
     if re.search(r'在这里输入|输入您的|此处输入', first): return 'item-body'
     if re.search(r'输入您的标题内容|标题文本标题', first): return 'item-body' if len(first) > 15 else 'item-title'
@@ -211,7 +270,7 @@ def guess_kind(page, boxes):
     roles = [guess_role(b['y'], b['w'], b['paras']) for b in boxes]
     texts = ' '.join(' '.join(b['paras']) for b in boxes)
     if re.search(r'THANKS', texts, re.I): return 'closing'
-    if re.search(r'目\\s*录', texts): return 'toc'
+    if re.search(r'目\\s*录|CONTENTS', texts, re.I): return 'toc'
     if re.search(r'PART ONE|PART TWO', texts, re.I) or any(b['paras'][0] == '01' and b['y'] < 1 for b in boxes):
         return 'section'
     if page <= 2: return 'cover'

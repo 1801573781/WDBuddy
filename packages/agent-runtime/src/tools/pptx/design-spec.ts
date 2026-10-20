@@ -149,6 +149,7 @@ export function parseSpec(rawJson: unknown): DesignSpec {
         bold: so2['bold'] === true,
         align: normAlign(so2['align']),
         shape: typeof so2['shape'] === 'string' ? so2['shape'].toLowerCase() : undefined,
+        bg: normHex(so2['bg']),
         fill,
         stroke,
         strokeWidth: clamp(so2['strokeWidth'], 0.25, 8, 1),
@@ -175,15 +176,78 @@ export function parseSpec(rawJson: unknown): DesignSpec {
   };
 }
 
+/** 从 start 处的 '{' 开始扫描，返回根对象闭合位置（-1 = 未闭合/被截断）。
+ *  必须按括号平衡扫描而非取最后一个 '}'：输出被截断时（数组中途断掉），
+ *  最后一个 '}' 属于内层对象，直接截到那里会把后半段内容整体丢掉。 */
+function findBalancedEnd(raw: string, start: number): number {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** 剥离字符串外的 // 行注释与块注释（视觉模型常在 JSON 里夹带中文注释） */
+function stripJsonComments(raw: string): string {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (inStr) {
+      out += ch;
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && raw[i + 1] === '/') {
+      while (i < raw.length && raw[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && raw[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 /** 剥离 markdown 围栏/杂文 → 提取最外层 {...} 文本片段（不 JSON.parse） */
 function extractJsonRaw(text: string): string | null {
   const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const raw = fence ? fence[1]! : text;
-  // 优先截取首个 { 到最后一个 }（跨围栏兜底）
   const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start >= 0 && end > start) return raw.slice(start, end + 1);
-  return null;
+  if (start < 0) return null;
+  // 括号平衡扫描：闭合位置可用则精确截取；输出被截断时返回剩余全文交给补齐逻辑
+  const end = findBalancedEnd(raw, start);
+  if (end > start) return raw.slice(start, end + 1);
+  return raw.slice(start);
 }
 
 /** 宽松修复视觉模型常见 JSON 畸形（修复后再 parse，失败返回 null）
@@ -197,6 +261,8 @@ function extractJsonRaw(text: string): string | null {
 export function looseParseJson(text: string): unknown | null {
   let raw = extractJsonRaw(text);
   if (!raw) return null;
+  // 0. 注释剥离（字符串外）：视觉模型爱在 JSON 里写 // 说明与 /* 注释 */
+  raw = stripJsonComments(raw);
   // 5. 控制字符与零宽字符剔除
   raw = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u200B-\u200D\uFEFF]/g, '');
   // 2. 中文引号 → 英文
@@ -212,9 +278,10 @@ export function looseParseJson(text: string): unknown | null {
   } catch {
     /* 继续修复 */
   }
-  // 6. 未闭合补齐：统计嵌套深度（字符串外），补齐缺失的 ] }
-  let depth2 = 0; // {
-  let depthArr = 0; // [
+  // 6. 未闭合补齐：用栈记录未闭合括号的真实顺序，逆序补闭合。
+  //    旧实现分别累计 { 与 [ 的数量再统一追加，顺序必然出错——例如
+  //    {"colors":[{"hex":"x" 需要补 "}]}"，却补成了 "]]}}"，JSON 直接不可解析。
+  const stack: string[] = [];
   let inStr = false;
   let esc = false;
   for (const ch of raw) {
@@ -222,14 +289,13 @@ export function looseParseJson(text: string): unknown | null {
     if (ch === '\\') { if (inStr) esc = true; continue; }
     if (ch === '"') { inStr = !inStr; continue; }
     if (inStr) continue;
-    if (ch === '{') depth2++;
-    else if (ch === '}') depth2 = Math.max(0, depth2 - 1);
-    else if (ch === '[') depthArr++;
-    else if (ch === ']') depthArr = Math.max(0, depthArr - 1);
+    if (ch === '{') stack.push('}');
+    else if (ch === '[') stack.push(']');
+    else if (ch === '}' || ch === ']') stack.pop();
   }
   let fixed = raw;
   if (inStr) fixed += '"'; // 字符串截断：先闭合引号
-  fixed += ']'.repeat(depthArr) + '}'.repeat(depth2);
+  while (stack.length > 0) fixed += stack.pop();
   if (fixed !== raw) {
     try {
       return JSON.parse(fixed);
@@ -238,6 +304,60 @@ export function looseParseJson(text: string): unknown | null {
     }
   }
   return null;
+}
+
+/** 拼贴图面板：视觉模型给出的每页归一化外接框 */
+export interface PanelInfo {
+  index: number;
+  kind: string;
+  label?: string;
+  box: { x0: number; y0: number; x1: number; y1: number };
+}
+
+const FULL_BOX = { x0: 0, y0: 0, x1: 1, y1: 1 };
+
+/** 解析面板识别输出（{layout, panels:[{index,kind,label,box}]}）。
+ *  解析失败或框非法 → 退化为"整图即单页"，绝不因定位失败中断任务。 */
+export function parsePanelsFromText(text: string): { layout: 'single' | 'collage'; panels: PanelInfo[] } {
+  let json: unknown = looseParseJson(text);
+  if (json === null) {
+    try {
+      json = extractJson(text);
+    } catch {
+      json = null;
+    }
+  }
+  const single = (): { layout: 'single'; panels: PanelInfo[] } => ({
+    layout: 'single',
+    panels: [{ index: 1, kind: 'unknown', box: { ...FULL_BOX } }],
+  });
+  if (!json || typeof json !== 'object') return single();
+  const obj = json as Record<string, unknown>;
+  const rawPanels = Array.isArray(obj['panels']) ? obj['panels'] : [];
+  const num = (v: unknown, dflt: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : dflt;
+  const panels: PanelInfo[] = [];
+  for (const p of rawPanels) {
+    if (!p || typeof p !== 'object') continue;
+    const po = p as Record<string, unknown>;
+    const boxRaw = po['box'];
+    if (!boxRaw || typeof boxRaw !== 'object') continue;
+    const bo = boxRaw as Record<string, unknown>;
+    const x0 = Math.min(Math.max(num(bo['x0'], 0), 0), 1);
+    const y0 = Math.min(Math.max(num(bo['y0'], 0), 0), 1);
+    const x1 = Math.min(Math.max(num(bo['x1'], 1), 0), 1);
+    const y1 = Math.min(Math.max(num(bo['y1'], 1), 0), 1);
+    if (x1 - x0 < 0.02 || y1 - y0 < 0.02) continue;
+    panels.push({
+      index: panels.length + 1,
+      kind: typeof po['kind'] === 'string' ? po['kind'] : 'unknown',
+      label: typeof po['label'] === 'string' ? po['label'].slice(0, 40) : undefined,
+      box: { x0, y0, x1, y1 },
+    });
+  }
+  if (panels.length === 0) return single();
+  const layout = panels.length > 1 ? 'collage' : obj['layout'] === 'collage' ? 'collage' : 'single';
+  return { layout, panels };
 }
 
 /** 文本 →（宽松解析 + parseSpec）。视觉模型输出容错入口：

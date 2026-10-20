@@ -8,45 +8,36 @@
  * RuntimeProviderConfig.visionConfig 注入（用户在设置页配置 baseUrl/apiModel/apiKey）。
  */
 import type { ChatMessage } from '@wdbuddy/shared-types';
-import { buildApiMessages } from './providers/openai-compat.js';
+import { VisionClient } from './vision-client.js';
 
 export interface VisionConfig {
   /** 兼容端点，如 https://open.bigmodel.cn/api/paas/v4 */
   baseUrl: string;
-  /** 视觉模型名，如 glm-4v-plus */
+  /** 视觉模型名，如 glm-4v-plus / gpt-4o / qwen-vl-plus */
   apiModel: string;
   /** API Key（Main 从钥匙串注入，不落盘） */
   apiKey: string;
+  /** 图片传输形态：data_url（默认）| raw（部分 GLM 网关只接受裸 base64） */
+  base64Mode?: 'data_url' | 'raw';
+  /** 细节档位（OpenAI 协议 low/high/auto） */
+  detail?: 'low' | 'high' | 'auto';
+  /** 单次调用超时（毫秒） */
+  timeoutMs?: number;
+  /** 失败重试次数 */
+  retries?: number;
 }
 
-/** 视觉模型调用（非流式：结构化提取场景无需流式，一次性 JSON 最稳） */
+/**
+ * 视觉模型调用（非流式：结构化提取场景无需流式，一次性输出最稳）。
+ * 统一委托 VisionClient：形态回退（data URL / 裸 base64）+ 重试 + 超时，
+ * 避免旧实现"一次 400 直接失败、用户看不懂错误"的问题。
+ */
 export async function visionChat(
   cfg: VisionConfig,
   messages: ChatMessage[],
   opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}
 ): Promise<string> {
-  const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: cfg.apiModel,
-      messages: buildApiMessages(messages),
-      max_tokens: opts.maxTokens ?? 4096,
-      temperature: opts.temperature ?? 0.2,
-    }),
-    signal: opts.signal,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`[vision] ${cfg.apiModel} HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
-  const json = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return json.choices?.[0]?.message?.content ?? '';
+  return new VisionClient(cfg).chat(messages, opts);
 }
 
 /** 从模型输出提取 JSON（容错：```json 围栏 / 前后杂文） */

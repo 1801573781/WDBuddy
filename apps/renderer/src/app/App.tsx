@@ -10,6 +10,7 @@ import { TemplateGallery } from '../features/templates/TemplateGallery';
 import { CustomProviderModal } from '../shared/CustomProviderModal';
 import { requireApi } from '../shared/ipc';
 import type { CustomProvider, ModelId } from '@wdbuddy/shared-types';
+import { BUILTIN_MODEL_IDS } from '@wdbuddy/shared-types';
 import '../features/task-list/styles.css';
 import '../features/chat/styles.css';
 import '../features/artifacts/styles.css';
@@ -37,11 +38,25 @@ export function App(): React.ReactElement {
   // runtime 事件桥接（App 根部挂载一次，§10.2）
   useRuntimeEventBridge();
 
-  // 启动时同步自定义 Provider 到全局 store（顶栏/向导下拉数据源）
+  // 启动时同步模型清单到全局 store（顶栏/首页/向导/设置下拉数据源）：
+  // 内置模型可被用户删除，故必须从设置读取"启用中的内置模型"
   useEffect(() => {
     void requireApi()
       .settingsGet()
-      .then((s) => useAppStore.getState().setCustomProviders(s.models.customProviders))
+      .then((s) => {
+        useAppStore.getState().setCustomProviders(s.models.customProviders);
+        useAppStore
+          .getState()
+          .setEnabledBuiltin(s.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS]);
+        // 顶栏当前模型若已被删除，回退 Auto，避免新建任务直接报"模型未配置"
+        const cur = useAppStore.getState().currentModel;
+        const available = new Set<string>([
+          'auto',
+          ...(s.models.enabledBuiltin ?? BUILTIN_MODEL_IDS),
+          ...s.models.customProviders.map((p) => p.id),
+        ]);
+        if (!available.has(cur)) useAppStore.getState().setCurrentModel('auto');
+      })
       .catch(() => undefined);
   }, []);
 

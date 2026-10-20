@@ -51,13 +51,19 @@ function guessRole(b: { x: number; y: number; w: number; paras: string[] }): str
   if (/^\d{2}$/.test(first)) return 'number';
   if (/^N\.\d+/.test(first)) return 'decor';
   if (/^(主讲人|汇报时间|时间)/.test(first)) return 'footer';
-  if (/^(PART|THANKS)/i.test(first)) return 'decor';
+  // 斜杠分隔口号（"智/能/时/代/共/享/未/来"）：是封面装饰，不是标题。
+  // 漏判会让 fillCover 把主标题塞进这排小字、真正的标题槽被清空——
+  // 成品表现为"封面只有口号没有标题"
+  if (/^(.{1,4}[/／·|]){2,}/.test(first.trim())) return 'decor';
   if (/^目\s*录$/.test(first.trim())) return 'title';
   if (/^CONTENTS$/i.test(first.trim())) return 'decor';
   if (/^\d{1,2}$/.test(first)) return 'number';
   // 日期大字槽（T7 大事件页 202X-03）：若当 body 填正文会产生 36pt 巨型日期
   // 淹没卡片文字；识别为 date 装饰，正文分流到卡片槽
   if (/^\d{2,4}X?[-/年]\d{1,2}([-/月]\d{1,2}日?)?$/.test(first.trim())) return 'date';
+  // template.from_image 视觉模式产出的占位用词（在此输入…）：必须与渲染侧
+  // 提示词词表对齐，否则克隆时标题槽被判成 body → 标题被当正文塞小框
+  if (/在此输入/.test(first)) return /主标题|标题/.test(first) ? 'title' : 'item-body';
   if (/添加.*标题|点击.*标题/.test(first)) return 'item-title';
   if (/在这里输入|输入您的|此处输入/.test(first)) return 'item-body';
   if (/输入您的标题内容|标题文本标题/.test(first)) return isLong ? 'item-body' : 'item-title';
@@ -71,7 +77,9 @@ function guessRole(b: { x: number; y: number; w: number; paras: string[] }): str
 function guessKind(page: number, slots: TemplateSlot[]): string {
   const texts = slots.flatMap((s) => s.paras).join(' ');
   if (/THANKS/i.test(texts)) return 'closing';
-  if (/目\s*录/.test(texts)) return 'toc';
+  // CONTENTS 必须与中文"目录"同等对待：图片生成的模板常只有英文装饰标题，
+  // 漏判会掉进下面的 page<=2 → cover，导致目录页无法被 toc 版式命中
+  if (/目\s*录|CONTENTS/i.test(texts)) return 'toc';
   if (/PART ONE|PART TWO/i.test(texts) || slots.some((s) => s.paras[0] === '01' && s.y < 1)) return 'section';
   if (page <= 2) return 'cover';
   const itemTitles = slots.filter((s) => s.role === 'item-title').length;
@@ -220,7 +228,13 @@ export function planClone(spec: SlideSpec, pool: TemplatePage[], usedPages: Set<
     // titleSlots 若只含"2026"类年份装饰（y<1.2 被误判 title），跳过——
     // 主标题塞进大字槽会被缩号且溢出（P1 事故）
     const titlePool = titleSlots.filter((s) => !/^\d{4}$/.test(s.paras[0] ?? ''));
-    const main = cjkBodies[0] ?? titlePool[0];
+    // 优先落"显式主标题槽"（占位词含 主标题/标题内容）：模板里可能同时存在
+    // 口号排、副标题排等多个近顶部文本框，按几何取第一个容易打偏
+    const explicit = titlePool.find((s) => /主标题|标题内容/.test(s.paras.join('')));
+    const main =
+      cjkBodies[0] ??
+      explicit ??
+      titlePool.slice().sort((a, b) => b.w * (b.h || 1) - a.w * (a.h || 1))[0];
     if (spec.title && main) reps[main.idx] = spec.title;
     const enBodies = bodySlots.filter(
       (s) => cjk(s.paras.join('')) === 0 && !/^\d{4}$/.test(s.paras[0] ?? '')

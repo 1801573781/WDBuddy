@@ -11,3 +11,5 @@ export { hunyuanProvider } from './providers/hunyuan.js';
 export { createCustomProvider } from './providers/custom.js';
 export { visionChat, extractJson } from './vision-provider.js';
 export type { VisionConfig } from './vision-provider.js';
+export { VisionClient } from './vision-client.js';
+export type { VisionCallOptions } from './vision-client.js';

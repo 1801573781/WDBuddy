@@ -24,13 +24,17 @@ export interface GatewayOptions {
   resolveApiKey: (modelId: ModelId) => string;
   /** 模型名覆盖：modelId → apiModel（设置页"模型名"输入框，未填用 Provider 默认值） */
   apiModelOverrides?: Partial<Record<ModelId, string>>;
+  /** 端点覆盖：modelId → baseUrl（设置页"Base URL"输入框，未填用 Provider 内置地址） */
+  apiBaseOverrides?: Partial<Record<ModelId, string>>;
+  /** 用户可见模型白名单（内置模型可被删除）：Auto 路由只会落在白名单内，
+   *  避免"下拉里没有这个模型、Auto 却路由过去报密钥未配置"。缺省 = 全部已注册模型。 */
+  availableModels?: ModelId[];
   retry?: Partial<RetryOptions>;
 }
 
 export class ModelGateway {
   private readonly registry = new ProviderRegistryImpl();
   private readonly retryOpts: RetryOptions;
-  private readonly apiModelOverrides: Partial<Record<ModelId, string>>;
 
   constructor(private readonly opts: GatewayOptions) {
     // 内置 Provider 注册（ADR-0005：新增模型 = 1 个文件 + 此处注册）
@@ -40,19 +44,27 @@ export class ModelGateway {
     this.registry.register(minimaxProvider);
     this.registry.register(hunyuanProvider);
     this.retryOpts = { ...DEFAULT_RETRY_OPTIONS, ...opts.retry };
-    this.apiModelOverrides = opts.apiModelOverrides ?? {};
-    this.applyApiModelOverrides();
+    this.applyOverrides();
   }
 
   /**
-   * 模型名覆盖：以同 id 重新注册替换内置 Provider。
-   * openai-compat 请求体的 model 字段取自 Provider 构造参数（而非 req.model），
-   * 故覆盖必须通过重建 Provider 实现。
+   * 端点 / 模型名覆盖：以同 id 重新注册替换内置 Provider。
+   * openai-compat 请求体的 model 字段与 base URL 取自 Provider 构造参数
+   * （而非 req.model），故任何覆盖都必须通过重建 Provider 实现。
+   *
+   * 端点覆盖的真实用途：用户走代理/中转站（如 company-gateway/v1），
+   * 或同一家服务有多个区域端点——这在设置页是 Base URL 输入框，
+   * 与多模态模型、自定义 Provider 的配置项保持一致。
    */
-  private applyApiModelOverrides(): void {
-    for (const [modelId, apiModel] of Object.entries(this.apiModelOverrides)) {
-      const trimmed = (apiModel ?? '').trim();
-      if (!trimmed) continue;
+  private applyOverrides(): void {
+    const ids = new Set<string>([
+      ...Object.keys(this.opts.apiModelOverrides ?? {}),
+      ...Object.keys(this.opts.apiBaseOverrides ?? {}),
+    ]);
+    for (const modelId of ids) {
+      const apiModel = (this.opts.apiModelOverrides?.[modelId as ModelId] ?? '').trim();
+      const baseUrl = (this.opts.apiBaseOverrides?.[modelId as ModelId] ?? '').trim();
+      if (!apiModel && !baseUrl) continue;
       // 仅覆盖已注册的 Provider（未知 id 忽略，避免构造期抛错）
       if (!this.registry.has(modelId as ModelId)) continue;
       const base = this.registry.resolve(modelId as ModelId);
@@ -60,8 +72,8 @@ export class ModelGateway {
         createOpenAiCompatProvider({
           id: base.id,
           displayName: base.displayName,
-          baseUrl: base.baseUrl,
-          apiModel: trimmed,
+          baseUrl: baseUrl || base.baseUrl,
+          apiModel: apiModel || base.apiModel,
         })
       );
     }
@@ -78,6 +90,17 @@ export class ModelGateway {
     const routed = routeAuto(
       features ?? { mode: 'ask', longContext: false, codeRelated: false, research: false }
     );
+    // 白名单：用户可能删掉了内置模型，Auto 不得路由到已删除的模型
+    const allowed = this.availableSet();
+    if (allowed && !allowed.has(routed.model)) {
+      const firstInList = this.opts.availableModels?.[0];
+      if (firstInList) {
+        return {
+          model: firstInList,
+          reason: `${routed.reason}；该模型已被用户从列表移除，改用 ${firstInList}`,
+        };
+      }
+    }
     if (this.opts.resolveApiKey(routed.model)) return routed;
     // Auto 路由目标（如轻量问答→GLM）密钥未配置：按注册顺序切换到首个已配置密钥的
     // 模型，避免"只配置了 A 的 Key 却始终报 B 未配置"的困惑；全部未配置则维持原路由
@@ -90,6 +113,13 @@ export class ModelGateway {
       }
     }
     return routed;
+  }
+
+  /** 可用模型集合（undefined = 不限制） */
+  private availableSet(): Set<string> | null {
+    const list = this.opts.availableModels;
+    if (!list || list.length === 0) return null;
+    return new Set<string>(list);
   }
 
   /** 统一流式对话：内部完成 Auto 路由 + 重试 + 降级链 */

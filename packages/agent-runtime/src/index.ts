@@ -30,6 +30,7 @@ import { shellExecTool } from './tools/shell.js';
 import { webSearchTool } from './tools/search.js';
 import { officeGenerateTool } from './tools/office.js';
 import { templateFromImageTool } from './tools/template-from-image.js';
+import { visionReadTool, viewImageTool } from './vision/tools.js';
 import { buildTemplatesPreview } from './tools/templates-preview.js';
 import { ddgSearch } from './tools/search-backend.js';
 import { InMemoryCheckpointStore } from './checkpoint/store.js';
@@ -59,6 +60,8 @@ let gateway: ModelGateway | null = null;
 const providerKeys = new Map<string, string>();
 /** modelId → 模型名覆盖（设置页"模型名"输入框；空值回落 Provider 默认） */
 const apiModelOverrides: Partial<Record<ModelId, string>> = {};
+/** modelId → 端点覆盖（设置页"Base URL"输入框；空值回落 Provider 内置地址） */
+const apiBaseOverrides: Partial<Record<ModelId, string>> = {};
 /** 视觉模型配置（initialize / providers.update 时更新；template.from_image 用） */
 let visionConfig: VisionConfig | null = null;
 const runningLoops = new Map<string, AgentLoop>();
@@ -72,18 +75,41 @@ const askResolvers = new Map<string, (answer: string) => void>();
 
 /** 应用 Main 下发的 Provider 配置：更新密钥表并重建网关（注册自定义 Provider） */
 function applyProviderConfig(cfg: Partial<RuntimeProviderConfig>): void {
-  for (const [modelId, key] of Object.entries(cfg.providerKeys ?? {})) {
-    providerKeys.set(modelId, key ?? '');
+  if (cfg.providerKeys) {
+    // 全量对账：配置里没出现的 modelId 视为"用户已删除该模型"，从内存表清理，
+    // 否则旧密钥会残留，Auto 路由仍可能选中已删除的模型
+    const incoming = Object.entries(cfg.providerKeys);
+    for (const modelId of [...providerKeys.keys()]) {
+      if (!(modelId in cfg.providerKeys)) providerKeys.delete(modelId);
+    }
+    for (const [modelId, key] of incoming) {
+      providerKeys.set(modelId, key ?? '');
+    }
   }
   for (const [modelId, apiModel] of Object.entries(cfg.apiModelOverrides ?? {})) {
     const trimmed = (apiModel ?? '').trim();
     if (trimmed) apiModelOverrides[modelId as ModelId] = trimmed;
     else delete apiModelOverrides[modelId as ModelId];
   }
+  // 端点覆盖同样全量对账：配置里没出现的项即视为"恢复内置默认地址"
+  for (const modelId of Object.keys(apiBaseOverrides)) {
+    if (!(modelId in (cfg.apiBaseOverrides ?? {}))) delete apiBaseOverrides[modelId as ModelId];
+  }
+  for (const [modelId, baseUrl] of Object.entries(cfg.apiBaseOverrides ?? {})) {
+    const trimmed = (baseUrl ?? '').trim();
+    if (trimmed) apiBaseOverrides[modelId as ModelId] = trimmed;
+    else delete apiBaseOverrides[modelId as ModelId];
+  }
   const vc = cfg.visionConfig;
   const resolved: VisionConfig | null =
     vc && vc.baseUrl && vc.apiModel && vc.apiKey
-      ? { baseUrl: vc.baseUrl, apiModel: vc.apiModel, apiKey: vc.apiKey }
+      ? {
+          baseUrl: vc.baseUrl,
+          apiModel: vc.apiModel,
+          apiKey: vc.apiKey,
+          base64Mode: vc.base64Mode,
+          detail: vc.detail,
+        }
       : null;
   visionConfig = resolved;
   visionChatCaller = resolved
@@ -97,6 +123,10 @@ function applyProviderConfig(cfg: Partial<RuntimeProviderConfig>): void {
   const gw = new ModelGateway({
     resolveApiKey: (modelId: ModelId) => providerKeys.get(modelId) ?? '',
     apiModelOverrides: { ...apiModelOverrides },
+    apiBaseOverrides: { ...apiBaseOverrides },
+    // 已配置密钥的模型即可用（内置模型可被用户删除，删除后不下发密钥，
+    // 这里自然被排除在 Auto 路由候选之外）
+    availableModels: [...providerKeys.keys()] as ModelId[],
   });
   for (const def of cfg.customProviders ?? []) {
     gw.registerCustom(createCustomProvider(def));
@@ -123,6 +153,8 @@ function makeLoop(task: Task): AgentLoop {
   tools.register(webSearchTool);
   tools.register(officeGenerateTool);
   tools.register(templateFromImageTool);
+  tools.register(visionReadTool);
+  tools.register(viewImageTool);
 
   // 工作空间：任务未指定时分配默认工作空间（Documents/WDBuddy），
   // 避免空 roots 导致所有文件操作被拒（修复"没配工作空间就必失败"）

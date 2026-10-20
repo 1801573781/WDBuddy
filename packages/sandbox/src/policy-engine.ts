@@ -137,6 +137,23 @@ export function evaluate(
       return { tool, decision: 'allow', reason: '生成类工具（工作空间内）' };
     }
 
+    case 'vision.read':
+    case 'view_image': {
+      // 视觉工具：把用户指定图片送往多模态模型。图片在工作空间外时需确认
+      //（与 template.from_image 同逻辑：允许后 grantDirectory 临时授权）
+      const img = typeof args['path'] === 'string' ? (args['path'] as string) : '';
+      if (!img) return { tool, decision: 'allow', reason: '视觉理解（路径由执行层校验）' };
+      const outside = !isInsideWorkspace(img, ctx.workspaceRoots);
+      if (outside) {
+        return {
+          tool,
+          decision: 'require-confirm',
+          reason: `读取工作空间外的图片：${img}（允许后将发送给视觉模型理解）`,
+        };
+      }
+      return { tool, decision: 'allow', reason: '视觉理解（图片在工作空间内）' };
+    }
+
     case 'template.from_image': {
       // 图片→模板：读用户指定图片 + 写用户模板目录（%APPDATA%，工作空间外）。
       // 图片路径在工作空间外时需确认（同 office.generate 输出目录授权逻辑，

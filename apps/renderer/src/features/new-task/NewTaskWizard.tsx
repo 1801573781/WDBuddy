@@ -5,9 +5,9 @@
  */
 import React, { useState } from 'react';
 import type { ModelId, TaskMode, TaskTrigger } from '@wdbuddy/shared-types';
-import { BUILTIN_MODEL_IDS, BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
+import { BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
 import { requireApi } from '../../shared/ipc';
-import { useAppStore } from '../../shared/store';
+import { useAppStore, useVisibleModels } from '../../shared/store';
 
 export function NewTaskWizard({ onClose }: { onClose: () => void }): React.ReactElement {
   const [description, setDescription] = useState('');
@@ -24,7 +24,8 @@ export function NewTaskWizard({ onClose }: { onClose: () => void }): React.React
   const [watchDir, setWatchDir] = useState('');
   const [enhancing, setEnhancing] = useState(false);
   const [creating, setCreating] = useState(false);
-  const customProviders = useAppStore((s) => s.customProviders);
+  // 只展示"启用中的内置模型 + 自定义 Provider"（内置模型可被用户删除）
+  const models = useVisibleModels();
 
   /** 提示词增强（§4.6：输入后可点 💡 增强为标题与结构化指令） */
   const enhance = async (): Promise<void> => {
@@ -144,11 +145,12 @@ export function NewTaskWizard({ onClose }: { onClose: () => void }): React.React
               <label className="wb-field__label">模型</label>
               <select className="wb-select" value={modelId} onChange={(e) => setModelId(e.target.value as ModelId)}>
                 <option value="auto">Auto（自动选择）</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="zhipu-glm">智谱 GLM</option>
-                <option value="kimi">Kimi</option>
-                <option value="minimax">MiniMax</option>
-                <option value="hunyuan">混元</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+                {modelId !== 'auto' && !models.some((m) => m.id === modelId) && (
+                  <option value={modelId}>{BUILTIN_MODEL_NAMES[modelId] ?? modelId}（不可用）</option>
+                )}
               </select>
             </div>
             <div>

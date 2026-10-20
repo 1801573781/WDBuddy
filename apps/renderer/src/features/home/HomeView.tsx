@@ -8,8 +8,8 @@
  */
 import React, { useEffect, useState } from 'react';
 import type { TaskMode } from '@wdbuddy/shared-types';
-import { BUILTIN_MODEL_IDS, BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
-import { useAppStore } from '../../shared/store';
+import { BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
+import { useAppStore, useVisibleModels } from '../../shared/store';
 import { requireApi } from '../../shared/ipc';
 import './styles.css';
 
@@ -30,7 +30,8 @@ export function HomeView(): React.ReactElement {
   const [permission, setPermission] = useState<'default' | 'full'>('default');
   const currentModel = useAppStore((s) => s.currentModel);
   const maxMode = useAppStore((s) => s.maxMode);
-  const customProviders = useAppStore((s) => s.customProviders);
+  // 只展示"启用中的内置模型 + 自定义 Provider"（内置模型可被用户删除）
+  const models = useVisibleModels();
 
   // 工作空间列表（选项行下拉）与权限默认值
   useEffect(() => {
@@ -138,13 +139,15 @@ export function HomeView(): React.ReactElement {
             title="模型选择"
           >
             <option value="auto">Auto（自动选择）</option>
-            {BUILTIN_MODEL_IDS.map((id) => (
-              <option key={id} value={id}>{BUILTIN_MODEL_NAMES[id] ?? id}</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
             ))}
-            {customProviders.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-            <option value="custom:api">自定义 API…</option>
+            {currentModel !== 'auto' && !models.some((m) => m.id === currentModel) && (
+              <option value={currentModel}>
+                {BUILTIN_MODEL_NAMES[currentModel] ?? currentModel}（不可用）
+              </option>
+            )}
+            <option value="custom:api">＋ 添加自定义模型…</option>
           </select>
           <button className="wb-home__mic" title="语音输入（接口，待接入）">🎙</button>
           <button

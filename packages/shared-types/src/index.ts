@@ -128,6 +128,8 @@ export type ToolName =
   | 'browser.open'
   | 'office.generate'
   | 'template.from_image'
+  | 'vision.read'
+  | 'view_image'
   | 'search.web'
   | 'user.ask';
 
@@ -168,6 +170,9 @@ export interface SpecSlide {
   templateName?: string;
   /** 页面标题占位文字（引擎按落点识别 title 槽） */
   title?: string;
+  /** 该页参考图绝对路径（visual 模式整页铺底；缺省回退 DesignSpec.image）。
+   *  拼贴图会被切页后逐页填写，单页图则与 DesignSpec.image 相同 */
+  sourceImage?: string;
   /** 槽位列表：文本/图形装饰，坐标为 0-100 归一化（相对页面宽高百分比） */
   slots: Array<{
     /** 槽位类型：text=文本框 decor=图形装饰 */
@@ -197,6 +202,8 @@ export interface SpecSlide {
     stroke?: string;
     /** 描边宽度（pt） */
     strokeWidth?: number;
+    /** 文字紧邻背景色（视觉模式用于盖住原图像素文字，再叠可编辑文本） */
+    bg?: string;
     /** 不透明度 0-1（半透明装饰） */
     opacity?: number;
     /** 圆角半径（normalized 0-1 相对短边） */
@@ -216,6 +223,11 @@ export interface DesignSpec {
   colors: SpecColor[];
   /** 建议字体族（如 "微软雅黑"） */
   font?: string;
+  /** 重建模式：visual=参考图铺底高保真（默认，还原度由像素保证）
+   *  | vector=程序化矢量重建（仅 rect/circle/line 等图元，还原度上限极低） */
+  mode?: 'visual' | 'vector';
+  /** 原始参考图绝对路径（visual 模式整图铺底兜底） */
+  image?: string;
   /** 逐页版式描述 */
   slides: SpecSlide[];
 }
@@ -331,7 +343,7 @@ export type IpcChannel =
   | 'settings:set'
   | 'providerKey:list'
   | 'providerKey:set'
-  | 'visionKey:status'
+  | 'visionKey:list'
   | 'visionKey:set'
   | 'runtime:event'
   | 'chat:export';
@@ -356,8 +368,8 @@ export interface IpcRequestMap {
   'settings:set': { settings: AppSettings };
   'providerKey:list': Record<string, never>;
   'providerKey:set': { modelId: ModelId; apiKey: string };
-  'visionKey:status': Record<string, never>;
-  'visionKey:set': { apiKey: string };
+  'visionKey:list': { ids: string[] };
+  'visionKey:set': { visionId: string; apiKey: string };
   'runtime:event': { event: RuntimeEvent };
   'chat:export': { taskId: string; format: 'md' | 'html' };
   'templates:preview': Record<string, never>;
@@ -375,7 +387,7 @@ export type IpcResponseMap = {
   'settings:set': { ok: true };
   'providerKey:list': { keys: ProviderKeyEntry[] };
   'providerKey:set': { ok: true };
-  'visionKey:status': { hasKey: boolean; masked: string };
+  'visionKey:list': { keys: Array<{ id: string; hasKey: boolean; masked: string }> };
   'visionKey:set': { ok: true };
   'runtime:event': { ok: true };
   'chat:export': { ok: true; path: string };
@@ -514,19 +526,43 @@ export interface CustomProvider {
   protocol: 'openai-compatible';
 }
 
+/** 多模态（读图）模型条目：一套 OpenAI 兼容端点 + 模型名，密钥单独存钥匙串。
+ *  LLM 与多模态模型分开管理——彼此独立增删，互不影响。 */
+export interface MultimodalModel {
+  /** 稳定 id（密钥键 vision:<id>，删除模型即清密钥） */
+  id: string;
+  /** 展示名（如「智谱 GLM-4V」） */
+  name: string;
+  /** OpenAI 兼容端点，如 https://open.bigmodel.cn/api/paas/v4 */
+  baseUrl: string;
+  /** 请求体 model 字段，如 glm-4v-plus */
+  apiModel: string;
+  /** 细节档位（OpenAI 协议 low/high/auto，可缺省） */
+  detail?: 'low' | 'high' | 'auto';
+}
+
 /** Main → Runtime 的 Provider 配置（runtime/initialize 参数与 runtime/providers.update 通知载荷） */
 export interface RuntimeProviderConfig {
   /** modelId → API Key（内置 + custom:*；密钥仅在进程间传递，加密落盘） */
   providerKeys: Partial<Record<ModelId, string>>;
   /** modelId → 请求体模型名覆盖（内置 Provider 的"模型名"输入框；空 = 用默认） */
   apiModelOverrides?: Partial<Record<ModelId, string>>;
+  /** modelId → 端点覆盖（内置 Provider 的"Base URL"输入框；空 = 用内置默认） */
+  apiBaseOverrides?: Partial<Record<ModelId, string>>;
   /** 用户自定义 Provider 列表（设置页录入） */
   customProviders: CustomProvider[];
-  /** 视觉模型配置（template.from_image 用；缺省时该工具返回设置指引） */
+  /** 当前生效的多模态（读图）模型配置：取用户选定的默认模型。
+   *  缺省时视觉工具返回设置指引。 */
   visionConfig?: {
     baseUrl: string;
     apiModel: string;
     apiKey: string;
+    /** 展示名（错误信息与结果标注用） */
+    name?: string;
+    /** 传输形态：缺省按 data URL 发送，端点拒收时客户端自动回退裸 base64 */
+    base64Mode?: 'data_url' | 'raw';
+    /** 细节档位（OpenAI 协议 low/high/auto） */
+    detail?: 'low' | 'high' | 'auto';
   };
 }
 
@@ -542,10 +578,24 @@ export interface AppSettings {
     customProviders: CustomProvider[];
     /** 内置模型名覆盖：modelId → 请求体 model 字段（空/缺失 = Provider 默认） */
     apiModelOverrides?: Partial<Record<ModelId, string>>;
-    /** 视觉模型（template.from_image 用；密钥存钥匙串 vision:api-key，此处仅引用） */
+    /** 内置模型端点覆盖：modelId → baseUrl（空/缺失 = Provider 内置地址）。
+     *  用途：走代理/中转站，或与多模态模型保持同样的可配置项。 */
+    apiBaseOverrides?: Partial<Record<ModelId, string>>;
+    /** 启用的内置模型清单（可删除任意内置模型，减少下拉噪音）。
+     *  缺省 = 全部内置模型启用；删除即从此数组移除（密钥与模型名覆盖同时清理），
+     *  可通过"恢复内置模型"重新加入。 */
+    enabledBuiltin?: ModelId[];
+    /** 多模态（读图）模型列表：可添加多个、可逐个删除，任选其一作为默认。
+     *  密钥按 id 存系统钥匙串（vision:<id>），不写入配置文件。 */
+    multimodalModels?: MultimodalModel[];
+    /** 默认多模态模型 id（空/缺失 = 未配置读图能力） */
+    defaultMultimodalId?: string;
+    /** @deprecated 旧版单实例视觉模型配置，仅用于启动迁移，勿在新代码中读写 */
     vision?: {
       baseUrl: string;
       apiModel: string;
+      base64Mode?: 'data_url' | 'raw';
+      detail?: 'low' | 'high' | 'auto';
     };
   };
   permissions: {
@@ -607,6 +657,15 @@ export const BUILTIN_MODEL_NAMES: Record<string, string> = {
   kimi: 'Kimi',
   minimax: 'MiniMax',
   hunyuan: '混元',
+};
+
+/** 内置模型默认 Base URL（与各 Provider 文件保持一致，设置页 placeholder） */
+export const BUILTIN_MODEL_BASE_URLS: Record<string, string> = {
+  deepseek: 'https://api.deepseek.com/v1',
+  'zhipu-glm': 'https://open.bigmodel.cn/api/paas/v4',
+  kimi: 'https://api.moonshot.cn/v1',
+  minimax: 'https://api.minimax.chat/v1',
+  hunyuan: 'https://api.hunyuan.cloud.tencent.com/v1',
 };
 
 /** 内置模型默认 apiModel（与各 Provider 文件保持一致，设置页 placeholder） */

@@ -50,6 +50,18 @@ export async function* parseSseStream(
   }
 }
 
+/** 按 base64 头部魔数推断图片 MIME（旧实现恒为 image/png，
+ *  把 jpg/webp 错标成 png 会让部分视觉端点直接拒收） */
+export function inferImageMime(base64Payload: string): string {
+  const head = base64Payload.slice(0, 24);
+  if (head.startsWith('/9j/')) return 'image/jpeg';
+  if (head.startsWith('iVBORw0KGgo')) return 'image/png';
+  if (head.startsWith('R0lGOD')) return 'image/gif';
+  if (head.startsWith('UklGR')) return 'image/webp';
+  if (head.startsWith('Qk')) return 'image/bmp';
+  return 'image/png';
+}
+
 /** 组装多模态消息：含 images 的 ChatMessage → OpenAI 多部分 content 数组。
  *  纯文本消息原样透传（现有调用方零影响）；图片统一转 base64 data URL */
 export function buildApiMessages(
@@ -64,9 +76,13 @@ export function buildApiMessages(
       { type: 'text', text: m.content },
     ];
     for (const img of m.images) {
-      const url = /^[a-z]+:\/\//i.test(img) || img.startsWith('data:')
-        ? img
-        : `data:image/png;base64,${img}`;
+      let url: string;
+      if (/^[a-z]+:\/\//i.test(img) || img.startsWith('data:')) {
+        url = img;
+      } else {
+        const mime = inferImageMime(img);
+        url = `data:${mime};base64,${img}`;
+      }
       parts.push({ type: 'image_url', image_url: { url } });
     }
     return { role: m.role, content: parts };

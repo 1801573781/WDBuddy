@@ -4,11 +4,15 @@
  */
 import React, { useEffect, useState } from 'react';
 import type { AppSettings, ModelId, ProviderKeyEntry } from '@wdbuddy/shared-types';
-import { BUILTIN_MODEL_DEFAULTS, BUILTIN_MODEL_IDS, BUILTIN_MODEL_NAMES, DEFAULT_APP_SETTINGS } from '@wdbuddy/shared-types';
+import { BUILTIN_MODEL_BASE_URLS, BUILTIN_MODEL_DEFAULTS, BUILTIN_MODEL_IDS, BUILTIN_MODEL_NAMES, DEFAULT_APP_SETTINGS } from '@wdbuddy/shared-types';
 import { requireApi } from '../../shared/ipc';
 import { useAppStore } from '../../shared/store';
+import { MultimodalModelsSection } from './MultimodalModelsSection';
+import { ModelCard } from './ModelCard';
 
 type SettingsTab = 'general' | 'models' | 'permissions' | 'account' | 'about';
+
+
 
 const TABS: Array<{ key: SettingsTab; label: string }> = [
   { key: 'general', label: '通用' },
@@ -25,11 +29,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }): React.ReactE
   const [keyEntries, setKeyEntries] = useState<ProviderKeyEntry[]>([]);
   /** modelId → 模型名覆盖（本地编辑态，保存时写入 settings.models.apiModelOverrides） */
   const [apiModels, setApiModels] = useState<Partial<Record<ModelId, string>>>({});
-  /** modelId → 输入中尚未提交的 API Key 草稿（底部"保存"统一提交；关闭前警告，防静默丢失） */
-  const [draftKeys, setDraftKeys] = useState<Partial<Record<ModelId, string>>>({});
-  /** 视觉模型密钥状态（脱敏）与草稿 */
-  const [visionKeyStatus, setVisionKeyStatus] = useState<{ hasKey: boolean; masked: string } | null>(null);
-  const [draftVisionKey, setDraftVisionKey] = useState('');
+  /** modelId → 端点覆盖（本地编辑态，保存时写入 settings.models.apiBaseOverrides） */
+  const [apiBases, setApiBases] = useState<Partial<Record<ModelId, string>>>({});
+
 
   useEffect(() => {
     void requireApi()
@@ -37,57 +39,122 @@ export function SettingsPage({ onClose }: { onClose: () => void }): React.ReactE
       .then((s) => {
         setSettings(s);
         setApiModels(s.models.apiModelOverrides ?? {});
+        setApiBases(s.models.apiBaseOverrides ?? {});
+        // 内置模型可删除：把"启用清单"同步到全局 store，供顶栏/首页/向导下拉使用
+        useAppStore
+          .getState()
+          .setEnabledBuiltin(s.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS]);
       });
     void requireApi()
       .providerKeyList()
       .then((r) => setKeyEntries(r.keys));
-    void requireApi()
-      .visionKeyStatus()
-      .then((r) => setVisionKeyStatus(r))
-      .catch(() => undefined);
   }, []);
 
-  const save = async (): Promise<void> => {
+
+
+  /** 启用的内置模型清单：缺省（undefined）= 全部启用。
+   *  内置模型同样可删除——多数用户只对接 1~2 家服务，留一堆用不到的模型
+   *  只会让下拉与密钥表变成噪音。 */
+  const enabledBuiltin: ModelId[] = settings.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS];
+  /** 已被删除（可恢复）的内置模型 */
+  const disabledBuiltin = BUILTIN_MODEL_IDS.filter((id) => !enabledBuiltin.includes(id));
+  /** 可见模型（默认模型下拉数据源）：启用中的内置 + 自定义 */
+  const visibleList: Array<{ id: ModelId; name: string }> = [
+    ...enabledBuiltin.map((id) => ({ id, name: BUILTIN_MODEL_NAMES[id] ?? id })),
+    ...settings.models.customProviders.map((p) => ({ id: p.id as ModelId, name: p.name })),
+  ];
+
+  /** 删除内置模型：从启用清单移除 + 清理密钥与模型名覆盖 + 默认模型回退 */
+  const handleRemoveBuiltin = async (id: ModelId): Promise<void> => {
     const api = requireApi();
-    // 修复（关键）：底部"保存"此前只写 AppSettings，Key 输入框内容被静默丢弃 →
-    // 用户点保存→关闭→重开显示"未配置"。现在先统一提交所有 Key 草稿。
-    for (const [id, k] of Object.entries(draftKeys)) {
-      const t = (k ?? '').trim();
-      if (t) await api.providerKeySet(id as ModelId, t);
+    const nextEnabled = enabledBuiltin.filter((m) => m !== id);
+    const nextOverrides = { ...(settings.models.apiModelOverrides ?? {}) };
+    delete nextOverrides[id];
+    const nextBaseOverrides = { ...(settings.models.apiBaseOverrides ?? {}) };
+    delete nextBaseOverrides[id];
+    const nextApiModels = { ...apiModels };
+    delete nextApiModels[id];
+    const nextApiBases = { ...apiBases };
+    delete nextApiBases[id];
+    const next: AppSettings = {
+      ...settings,
+      models: {
+        ...settings.models,
+        enabledBuiltin: nextEnabled,
+        apiModelOverrides: nextOverrides,
+        apiBaseOverrides: nextBaseOverrides,
+        // 默认模型指向被删模型时回退 Auto，避免下次任务启动直接报"模型未配置"
+        defaultModelId: settings.models.defaultModelId === id ? 'auto' : settings.models.defaultModelId,
+      },
+    };
+    await api.settingsSet(next);
+    await api.providerKeySet(id, '');
+    setApiModels(nextApiModels);
+    setApiBases(nextApiBases);
+    setSettings(next);
+    useAppStore.getState().setEnabledBuiltin(nextEnabled);
+    // 顶栏当前选中的正是被删除模型时回退 Auto，避免下一条消息仍按已删模型发起
+    if (useAppStore.getState().currentModel === id) {
+      useAppStore.getState().setCurrentModel('auto');
     }
-    if (draftVisionKey.trim()) {
-      await api.visionKeySet(draftVisionKey.trim());
-      setDraftVisionKey('');
-      void api
-        .visionKeyStatus()
-        .then((r) => setVisionKeyStatus(r))
-        .catch(() => undefined);
-    }
-    setDraftKeys({});
     void api
       .providerKeyList()
       .then((r) => setKeyEntries(r.keys))
       .catch(() => undefined);
-    // 模型名覆盖：剔除空白项后合并进 settings（空 = 恢复默认）
+  };
+
+  /** 恢复内置模型（不覆盖已有配置，仅重新加入下拉清单） */
+  const handleRestoreBuiltin = async (id: ModelId): Promise<void> => {
+    const api = requireApi();
+    const nextEnabled = [...enabledBuiltin, id];
+    const next: AppSettings = {
+      ...settings,
+      models: { ...settings.models, enabledBuiltin: nextEnabled },
+    };
+    await api.settingsSet(next);
+    setSettings(next);
+    useAppStore.getState().setEnabledBuiltin(nextEnabled);
+  };
+
+  const save = async (): Promise<void> => {
+    const api = requireApi();
+    // 每个模型卡片内的 API Key 都是"立即保存"，此处无需再提交草稿
+    void api
+      .providerKeyList()
+      .then((r) => setKeyEntries(r.keys))
+      .catch(() => undefined);
+    // 模型名 / 端点覆盖：剔除空白项后合并进 settings（空 = 恢复内置默认）
     const overrides: Partial<Record<ModelId, string>> = {};
     for (const [k, v] of Object.entries(apiModels)) {
       const t = (v ?? '').trim();
       if (t) overrides[k as ModelId] = t;
     }
-    const next: AppSettings = { ...settings, models: { ...settings.models, apiModelOverrides: overrides } };
+    const baseOverrides: Partial<Record<ModelId, string>> = {};
+    for (const [k, v] of Object.entries(apiBases)) {
+      const t = (v ?? '').trim();
+      if (t) baseOverrides[k as ModelId] = t;
+    }
+    const next: AppSettings = {
+      ...settings,
+      models: {
+        ...settings.models,
+        apiModelOverrides: overrides,
+        apiBaseOverrides: baseOverrides,
+        enabledBuiltin: settings.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS],
+      },
+    };
     await api.settingsSet(next);
     setSettings(next);
+    useAppStore.getState().setEnabledBuiltin(next.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS]);
+    // 内联编辑的自定义 Provider（名称/端点/模型名）也要同步到全局 store，
+    // 否则顶栏与首页下拉仍显示旧值
+    useAppStore.getState().setCustomProviders(next.models.customProviders);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
 
-  /** 关闭守卫：存在未提交 Key 草稿时确认，防止静默丢失 */
-  const closeWithGuard = (): void => {
-    const hasDraft =
-      Object.values(draftKeys).some((k) => (k ?? '').trim().length > 0) || draftVisionKey.trim().length > 0;
-    if (hasDraft && !window.confirm('检测到未保存的 API Key 输入，关闭后将丢失。确定关闭吗？')) return;
-    onClose();
-  };
+  /** 关闭：每个模型卡片的 API Key 都是"立即保存"，不存在未提交草稿 */
+  const closeWithGuard = (): void => onClose();
 
   /** 全局弹窗（App 层）保存/删除自定义 Provider 后同步本地 settings，避免旧列表被“保存”回写。
    *  深比较全部字段：旧实现仅比 id——编辑名称/BaseURL/API Key 后 id 不变，
@@ -114,11 +181,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }): React.ReactE
     };
     await api.settingsSet(next);
     await api.providerKeySet(id as ModelId, '');
-    setDraftKeys((prev) => {
-      const n = { ...prev };
-      delete n[id as ModelId];
-      return n;
-    });
     useAppStore.getState().setCustomProviders(next.models.customProviders);
     setSettings(next);
   };
@@ -171,170 +233,172 @@ export function SettingsPage({ onClose }: { onClose: () => void }): React.ReactE
 
             {tab === 'models' && (
               <>
-                <SettingsRow label="默认模型">
+                <SettingsRow label="默认 LLM 模型">
                   <select className="wb-select" value={settings.models.defaultModelId} onChange={(e) => setSettings({ ...settings, models: { ...settings.models, defaultModelId: e.target.value as AppSettings['models']['defaultModelId'] } })}>
                     <option value="auto">Auto（自动选择）</option>
-                    {BUILTIN_MODEL_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {BUILTIN_MODEL_NAMES[id] ?? id}
+                    {visibleList.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
                       </option>
                     ))}
-                    {settings.models.customProviders.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
+                    {settings.models.defaultModelId !== 'auto' &&
+                      !visibleList.some((m) => m.id === settings.models.defaultModelId) && (
+                        <option value={settings.models.defaultModelId}>
+                          {BUILTIN_MODEL_NAMES[settings.models.defaultModelId] ??
+                            settings.models.defaultModelId}
+                          （已删除）
+                        </option>
+                      )}
                   </select>
+                  {visibleList.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--wb-color-warning)', marginTop: 4 }}>
+                      当前没有任何模型。请添加自定义 Provider，或恢复内置模型。
+                    </div>
+                  )}
                 </SettingsRow>
 
-                {BUILTIN_MODEL_IDS.map((id) => {
+                <MultimodalModelsSection settings={settings} setSettings={setSettings} />
+
+                {/* 内置模型：与多模态模型、自定义 Provider 完全相同的卡片版式
+                    （显示名 / Base URL / 模型名 / API Key / 设为默认 / 删除） */}
+                {enabledBuiltin.map((id) => {
                   const entry = keyEntries.find((k) => k.modelId === id);
+                  const isDefault = settings.models.defaultModelId === id;
                   return (
-                    <SettingsRow key={id} label={`${BUILTIN_MODEL_NAMES[id] ?? id} API Key / 模型名`}>
-                      <ProviderKeyRow
-                        masked={entry?.masked ?? ''}
-                        value={draftKeys[id] ?? ''}
-                        onChange={(v) => setDraftKeys((prev) => ({ ...prev, [id]: v }))}
-                        onImmediateSave={async (k) => {
-                          await requireApi().providerKeySet(id, k);
-                          setDraftKeys((prev) => {
-                            const n = { ...prev };
-                            delete n[id];
-                            return n;
-                          });
-                          void requireApi()
-                            .providerKeyList()
-                            .then((r) => setKeyEntries(r.keys))
-                            .catch(() => undefined);
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                        <input
-                          className="wb-input"
-                          style={{ width: 260 }}
-                          value={apiModels[id] ?? ''}
-                          placeholder={`模型名（默认 ${BUILTIN_MODEL_DEFAULTS[id] ?? ''}）`}
-                          onChange={(e) => setApiModels((prev) => ({ ...prev, [id]: e.target.value }))}
-                        />
-                      </div>
-                    </SettingsRow>
+                    <ModelCard
+                      key={id}
+                      title={BUILTIN_MODEL_NAMES[id] ?? id}
+                      isDefault={isDefault}
+                      nameEditable={false}
+                      name={BUILTIN_MODEL_NAMES[id] ?? id}
+                      baseUrl={apiBases[id] ?? ''}
+                      apiModel={apiModels[id] ?? ''}
+                      baseUrlPlaceholder={`Base URL（默认 ${BUILTIN_MODEL_BASE_URLS[id] ?? ''}）`}
+                      apiModelPlaceholder={`模型名（默认 ${BUILTIN_MODEL_DEFAULTS[id] ?? ''}）`}
+                      masked={entry?.masked ?? ''}
+                      onPatch={(patch) => {
+                        if (patch.baseUrl !== undefined) {
+                          setApiBases((prev) => ({ ...prev, [id]: patch.baseUrl as string }));
+                        }
+                        if (patch.apiModel !== undefined) {
+                          setApiModels((prev) => ({ ...prev, [id]: patch.apiModel as string }));
+                        }
+                      }}
+                      onSaveKey={async (apiKey) => {
+                        await requireApi().providerKeySet(id, apiKey);
+                        void requireApi()
+                          .providerKeyList()
+                          .then((r) => setKeyEntries(r.keys))
+                          .catch(() => undefined);
+                      }}
+                      onSetDefault={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          models: { ...prev.models, defaultModelId: id },
+                        }))
+                      }
+                      onDelete={() => {
+                        if (
+                          !window.confirm(
+                            `确定删除内置模型「${BUILTIN_MODEL_NAMES[id] ?? id}」？\n将同时清除其 API Key、Base URL 与模型名配置，可从下方“恢复内置模型”重新加入。`
+                          )
+                        )
+                          return;
+                        void handleRemoveBuiltin(id);
+                      }}
+                      deleteHint="从模型列表移除（同时清除该模型的 API Key、Base URL 与模型名）"
+                    />
                   );
                 })}
 
-                <SettingsRow label="视觉模型（图片转模板）">
-                  <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ color: 'var(--wb-text-secondary)' }}>
-                      供 template.from_image 使用（把设计参考图转成 PPT 模板）。需 OpenAI 兼容多模态端点（GLM-4V / Kimi-vision / GPT-4o 等），密钥存系统钥匙串。
-                    </span>
+                {disabledBuiltin.length > 0 && (
+                  <SettingsRow label="恢复内置模型">
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <input
-                        className="wb-input"
-                        style={{ width: 300 }}
-                        value={settings.models.vision?.baseUrl ?? ''}
-                        placeholder="Base URL（如 https://open.bigmodel.cn/api/paas/v4）"
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            models: {
-                              ...settings.models,
-                              vision: {
-                                baseUrl: e.target.value,
-                                apiModel: settings.models.vision?.apiModel ?? '',
-                              },
-                            },
-                          })
-                        }
-                      />
-                      <input
-                        className="wb-input"
-                        style={{ width: 200 }}
-                        value={settings.models.vision?.apiModel ?? ''}
-                        placeholder="模型名（如 glm-4v-plus）"
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            models: {
-                              ...settings.models,
-                              vision: {
-                                baseUrl: settings.models.vision?.baseUrl ?? '',
-                                apiModel: e.target.value,
-                              },
-                            },
-                          })
-                        }
-                      />
+                      {disabledBuiltin.map((id) => (
+                        <button
+                          key={id}
+                          className="wb-btn wb-btn--ghost wb-btn--small"
+                          title="重新加入模型列表（不恢复已清除的密钥）"
+                          onClick={() => void handleRestoreBuiltin(id)}
+                        >
+                          ＋ {BUILTIN_MODEL_NAMES[id] ?? id}
+                        </button>
+                      ))}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <ProviderKeyRow
-                        masked={visionKeyStatus?.masked ?? ''}
-                        value={draftVisionKey}
-                        onChange={setDraftVisionKey}
-                        onImmediateSave={async (k) => {
-                          await requireApi().visionKeySet(k);
-                          setDraftVisionKey('');
-                          void requireApi()
-                            .visionKeyStatus()
-                            .then((r) => setVisionKeyStatus(r))
-                            .catch(() => undefined);
-                        }}
-                      />
-                      {visionKeyStatus?.hasKey && settings.models.vision?.baseUrl && settings.models.vision.apiModel ? (
-                        <span style={{ fontSize: 11, color: 'var(--wb-color-success)' }}>✓ 已就绪（template.from_image 可用）</span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--wb-color-warning)' }}>
-                          {visionKeyStatus?.hasKey ? 'Base URL / 模型名待填' : '密钥未配置'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </SettingsRow>
+                  </SettingsRow>
+                )}
 
-                <SettingsRow label="自定义 Provider">
-                  <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {settings.models.customProviders.length === 0 && (
-                      <span style={{ color: 'var(--wb-text-secondary)' }}>
-                        暂无自定义 Provider（OpenAI 兼容 API：Base URL + 模型名 + API Key，密钥存系统钥匙串）
-                      </span>
-                    )}
-                    {settings.models.customProviders.map((p) => {
-                      const entry = keyEntries.find((k) => k.modelId === p.id);
-                      return (
-                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span>
-                            {p.name}（{p.baseUrl} · {p.apiModel}）
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: entry?.hasKey ? 'var(--wb-color-success)' : 'var(--wb-color-warning)',
-                            }}
-                          >
-                            {entry?.hasKey ? `密钥已配置（${entry.masked}）` : '密钥未配置'}
-                          </span>
-                          <button
-                            className="wb-btn wb-btn--ghost wb-btn--small"
-                            onClick={() => useAppStore.getState().setCustomProviderModal({ initial: p, switchOnSave: false })}
-                          >
-                            编辑
-                          </button>
-                          <button
-                            className="wb-btn wb-btn--ghost wb-btn--small"
-                            onClick={() => void handleRemove(p.id)}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      );
-                    })}
-                    <div>
-                      <button
-                        className="wb-btn wb-btn--default wb-btn--small"
-                        onClick={() => useAppStore.getState().setCustomProviderModal({ initial: null, switchOnSave: false })}
-                      >
-                        ＋ 添加自定义 Provider
-                      </button>
-                    </div>
-                  </div>
+
+
+                {/* 自定义 Provider：同样使用统一卡片版式，编辑与删除位置内联可见 */}
+                {settings.models.customProviders.length === 0 && (
+                  <SettingsRow label="自定义 Provider">
+                    <span style={{ fontSize: 12, color: 'var(--wb-text-secondary)' }}>
+                      暂无（OpenAI 兼容 API：Base URL + 模型名 + API Key，密钥存系统钥匙串）
+                    </span>
+                  </SettingsRow>
+                )}
+                {settings.models.customProviders.map((p) => {
+                  const entry = keyEntries.find((k) => k.modelId === p.id);
+                  const isDefault = settings.models.defaultModelId === p.id;
+                  return (
+                    <ModelCard
+                      key={p.id}
+                      title={p.name}
+                      isDefault={isDefault}
+                      nameEditable
+                      name={p.name}
+                      baseUrl={p.baseUrl}
+                      apiModel={p.apiModel}
+                      masked={entry?.masked ?? ''}
+                      onPatch={(patch) => {
+                        setSettings((prev) => ({
+                          ...prev,
+                          models: {
+                            ...prev.models,
+                            customProviders: prev.models.customProviders.map((item) =>
+                              item.id === p.id
+                                ? {
+                                    ...item,
+                                    ...(patch.name !== undefined ? { name: patch.name } : {}),
+                                    ...(patch.baseUrl !== undefined ? { baseUrl: patch.baseUrl } : {}),
+                                    ...(patch.apiModel !== undefined ? { apiModel: patch.apiModel } : {}),
+                                  }
+                                : item
+                            ),
+                          },
+                        }));
+                      }}
+                      onSaveKey={async (apiKey) => {
+                        await requireApi().providerKeySet(p.id as ModelId, apiKey);
+                        void requireApi()
+                          .providerKeyList()
+                          .then((r) => setKeyEntries(r.keys))
+                          .catch(() => undefined);
+                      }}
+                      onSetDefault={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          models: { ...prev.models, defaultModelId: p.id as ModelId },
+                        }))
+                      }
+                      onDelete={() => {
+                        if (!window.confirm(`确定删除自定义 Provider「${p.name}」？\n其 API Key 将一并清除。`)) return;
+                        void handleRemove(p.id);
+                      }}
+                      deleteHint="删除该自定义 Provider（同时清除其 API Key）"
+                    />
+                  );
+                })}
+                <SettingsRow label="添加自定义 Provider">
+                  <button
+                    className="wb-btn wb-btn--default wb-btn--small"
+                    onClick={() =>
+                      useAppStore.getState().setCustomProviderModal({ initial: null, switchOnSave: false })
+                    }
+                  >
+                    ＋ 添加自定义 Provider
+                  </button>
                 </SettingsRow>
               </>
             )}

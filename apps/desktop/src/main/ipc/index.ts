@@ -32,9 +32,11 @@ export interface IpcDeps {
   getProviderKey: (modelId: string) => string;
   setProviderKey: (modelId: string, apiKey: string) => void;
   clearProviderKey: (modelId: string) => void;
-  /** 视觉模型密钥存取（template.from_image 用；同 safeStorage 机制） */
-  getVisionKey: () => string;
-  setVisionKey: (apiKey: string) => void;
+  /** 多模态（读图）模型密钥存取：按模型 id 隔离，同 safeStorage 机制 */
+  getVisionKey: (visionId: string) => string;
+  setVisionKey: (visionId: string, apiKey: string) => void;
+  /** 当前配置的多模态模型 id 清单（密钥状态查询用） */
+  listVisionIds: () => string[];
   /** 自定义技能存储 */
   skillStore: SkillStore;
   getWindow: () => BrowserWindow | null;
@@ -197,7 +199,10 @@ export function registerIpc(deps: IpcDeps): void {
 
   ipcMain.handle('providerKey:list', (_e, _payload: Record<string, never>) => {
     const s = settings.get();
-    const ids: ModelId[] = [...BUILTIN_MODEL_IDS, ...s.models.customProviders.map((p) => p.id as ModelId)];
+    // 内置模型可被用户删除：只返回"启用中的内置模型 + 自定义 Provider"的密钥状态，
+    // 已删除模型的密钥不会出现在列表里（删除时已清理，这里是第二道保障）
+    const enabledBuiltin = (s.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS]) as ModelId[];
+    const ids: ModelId[] = [...enabledBuiltin, ...s.models.customProviders.map((p) => p.id as ModelId)];
     const keys: ProviderKeyEntry[] = ids.map((modelId) => {
       const key = getProviderKey(modelId);
       return { modelId, hasKey: key.length > 0, masked: maskKey(key) };
@@ -215,17 +220,20 @@ export function registerIpc(deps: IpcDeps): void {
     return { ok: true };
   });
 
-  // ─────────── 视觉模型密钥（template.from_image；明文仅存 safeStorage） ───────────
+  // ─────────── 多模态（读图）模型密钥（每个模型独立，明文仅存 safeStorage） ───────────
 
-  ipcMain.handle('visionKey:status', () => {
-    const key = getVisionKey();
-    return { hasKey: key.length > 0, masked: maskKey(key) };
+  ipcMain.handle('visionKey:list', () => {
+    const keys = deps.listVisionIds().map((id) => {
+      const key = getVisionKey(id);
+      return { id, hasKey: key.length > 0, masked: maskKey(key) };
+    });
+    return { keys };
   });
 
-  ipcMain.handle('visionKey:set', (_e, payload: { apiKey: string }) => {
-    setVisionKey(payload.apiKey.trim());
-    // 密钥变化 → 推送最新 visionConfig 到 Runtime（settings 里 baseUrl/apiModel
-    // 已由 settings:set 保存，此处即时热更新，无需重启应用）
+  ipcMain.handle('visionKey:set', (_e, payload: { visionId: string; apiKey: string }) => {
+    setVisionKey(payload.visionId, payload.apiKey.trim());
+    // 密钥变化 → 推送最新 visionConfig 到 Runtime（模型列表与端点已由
+    // settings:set 保存，此处即时热更新，无需重启应用）
     runtime.updateProviders();
     return { ok: true };
   });

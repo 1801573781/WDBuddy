@@ -428,6 +428,8 @@ export class Executor {
     const toolCtx = {
       taskId: task.id,
       fsGuard: this.deps.fsGuard,
+      // 工作空间根：任务未指定时留空（视觉工具对空数组不做路径限制，
+      // 具体访问仍由 fs-guard 与 policy-engine 双重裁决）
       workspaceRoots: task.workspaceUri ? [task.workspaceUri] : [],
       webSearch: this.deps.webSearch,
       visionChat: this.deps.visionChat,
@@ -484,6 +486,7 @@ function buildStepSystemPrompt(
     'fs.read', 'fs.write', 'fs.list', 'fs.delete',
     'shell.exec', 'search.web',
     'office.generate', 'template.from_image',
+    'vision.read', 'view_image',
   ];
   return `你是 WDBuddy Agent，正在执行任务（模式：${task.mode}，权限：${task.permission}）。
 工作空间：${task.workspaceUri ?? '（未指定，文件操作将被拒绝）'}
@@ -531,6 +534,14 @@ function buildStepSystemPrompt(
   视觉模型分析图片 → 自动生成 .pptx 模板并注册到模版库 → 返回模板 id，
   随后正常用 office.generate + template="返回的id" 克隆生成。
   前置条件：设置中已配置视觉模型；未配置时工具会返回指引，转告用户即可。
+  【看图铁律】只要任务涉及图片（用户给了图片路径、或需要参照截图/设计稿/表格/报错界面），
+  必须先调 {"tool": "vision.read", "args": {"path": "图片绝对路径", "question": "你想重点了解什么"}} 拿到结构化转述，再决策。
+  严禁凭文件名/大小猜测图片内容，严禁跳过读图直接生成。
+  - 多图一次读：{"tool": "vision.read", "args": {"paths": ["a.png", "b.png"]}}（上限 5 张）
+  - 结果里出现 [不确定区域]（带归一化坐标）或小字看不清时，用 view_image 裁剪特写：
+    {"tool": "view_image", "args": {"path": "图片绝对路径", "region": "0.55,0.10,0.95,0.40", "focus": "这块写的是什么"}}
+    region 也支持语义描述（如 "右上角的表格"），支持连续调用逐层放大。
+  - 读图结果里的 [提示] 行说明 OCR 可能有误：与代码/文件实际内容冲突时以实际内容为准。
   【视觉失败排查红线】template.from_image 解析失败时：工具会把原始响应落盘为
   vision-response-*.md 并在报错里给出路径——直接 fs.read 该文件确认模型输出形态，
   严禁在工作空间里按时间戳/大小猜测"原始响应文件"（10/16 事故：猜错文件空转 1 小时）；

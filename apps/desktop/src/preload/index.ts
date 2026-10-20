@@ -71,11 +71,11 @@ const api = {
   providerKeySet: (modelId: ModelId, apiKey: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke('providerKey:set', { modelId, apiKey }),
 
-  // ─────────── 视觉模型密钥（template.from_image） ───────────
-  visionKeyStatus: (): Promise<{ hasKey: boolean; masked: string }> =>
-    ipcRenderer.invoke('visionKey:status', {}),
-  visionKeySet: (apiKey: string): Promise<{ ok: true }> =>
-    ipcRenderer.invoke('visionKey:set', { apiKey }),
+  // ─────────── 多模态（读图）模型密钥（每个模型独立） ───────────
+  visionKeyList: (): Promise<{ keys: Array<{ id: string; hasKey: boolean; masked: string }> }> =>
+    ipcRenderer.invoke('visionKey:list', {}),
+  visionKeySet: (visionId: string, apiKey: string): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('visionKey:set', { visionId, apiKey }),
 
   // ─────────── 权限应答 ───────────
   permissionRespond: (

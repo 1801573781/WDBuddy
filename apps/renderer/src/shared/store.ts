@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand';
 import type { CustomProvider, ModelId, RuntimeEvent } from '@wdbuddy/shared-types';
+import { BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
 import { useEffect } from 'react';
 
 export type SidePanelName = 'tasks' | 'skills' | 'preferences' | 'settings' | 'remote-link' | 'new-task' | 'templates' | null;
@@ -26,6 +27,9 @@ interface AppStore {
   // 模型 / Max
   currentModel: ModelId;
   setCurrentModel(m: ModelId): void;
+  /** 启用的内置模型（用户可删除不用的内置模型，减少下拉噪音） */
+  enabledBuiltin: ModelId[];
+  setEnabledBuiltin(list: ModelId[]): void;
   /** 用户自定义 Provider（settings 同步，供顶栏/向导下拉渲染） */
   customProviders: CustomProvider[];
   setCustomProviders(list: CustomProvider[]): void;
@@ -68,6 +72,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   currentModel: 'auto',
   setCurrentModel: (m) => set({ currentModel: m }),
+  enabledBuiltin: [],
+  setEnabledBuiltin: (list) => set({ enabledBuiltin: list }),
   customProviders: [],
   setCustomProviders: (list) => set({ customProviders: list }),
   customProviderModal: null,
@@ -106,6 +112,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return () => set0.delete(fn);
   },
 }));
+
+/**
+ * 可见模型清单（下拉框统一数据源）：仅"启用中的内置模型 + 自定义 Provider"。
+ * 内置模型可被用户删除（删除即从 enabledBuiltin 移除），避免下拉里一堆用不到的模型。
+ */
+export function visibleModels(
+  enabledBuiltin: readonly ModelId[],
+  customProviders: readonly CustomProvider[]
+): Array<{ id: ModelId; name: string }> {
+  const list: Array<{ id: ModelId; name: string }> = [];
+  for (const id of enabledBuiltin) {
+    list.push({ id, name: BUILTIN_MODEL_NAMES[id] ?? id });
+  }
+  for (const p of customProviders) {
+    list.push({ id: p.id as ModelId, name: p.name });
+  }
+  return list;
+}
+
+/** React hook：当前可见模型清单（顶栏/首页/向导/设置下拉共用） */
+export function useVisibleModels(): Array<{ id: ModelId; name: string }> {
+  const enabledBuiltin = useAppStore((s) => s.enabledBuiltin);
+  const customProviders = useAppStore((s) => s.customProviders);
+  return visibleModels(enabledBuiltin, customProviders);
+}
 
 /** React hook：订阅统一事件流（App 根部挂载一次，§10.2） */
 export function useRuntimeEventBridge(): void {

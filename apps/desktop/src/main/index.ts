@@ -182,19 +182,54 @@ async function bootstrap(): Promise<void> {
     secureStorage.delete(providerKeyId(modelId));
   };
 
-  // 2.1.1 视觉模型密钥（template.from_image 用；与 Provider 密钥同机制走 safeStorage）
-  const VISION_KEY_ID = 'vision:api-key';
-  const setVisionKey = (apiKey: string): void => {
-    if (apiKey) secureStorage.set(VISION_KEY_ID, apiKey);
-    else secureStorage.delete(VISION_KEY_ID);
+  // 2.1.1 多模态（读图）模型密钥：按模型 id 存钥匙串（vision:<id>）。
+  // 可添加多个多模态模型、逐个删除；删除时同步清除对应密钥。
+  const visionKeyId = (visionId: string): string => `vision:${visionId}`;
+  const setVisionKey = (visionId: string, apiKey: string): void => {
+    if (!visionId) return;
+    if (apiKey) secureStorage.set(visionKeyId(visionId), apiKey);
+    else secureStorage.delete(visionKeyId(visionId));
   };
-  const getVisionKey = (): string => secureStorage.get(VISION_KEY_ID) ?? '';
+  const getVisionKey = (visionId: string): string =>
+    visionId ? (secureStorage.get(visionKeyId(visionId)) ?? '') : '';
+
+  // 旧版单实例视觉模型 → 多模态模型列表迁移（一次性，幂等）
+  const migrateLegacyVision = (): void => {
+    const s = settings.get();
+    if (s.models.multimodalModels) return; // 已迁移
+    const legacy = s.models.vision;
+    const legacyKey = secureStorage.get('vision:api-key') ?? '';
+    if (!legacy?.baseUrl || !legacy.apiModel) {
+      if (!legacy) settings.patch({ models: { ...s.models, multimodalModels: [] } });
+      return;
+    }
+    const id = `mm-${Date.now().toString(36)}`;
+    const migrated = {
+      id,
+      name: legacy.apiModel,
+      baseUrl: legacy.baseUrl,
+      apiModel: legacy.apiModel,
+    };
+    if (legacyKey) secureStorage.set(visionKeyId(id), legacyKey);
+    settings.patch({
+      models: {
+        ...s.models,
+        multimodalModels: [migrated],
+        defaultMultimodalId: id,
+        vision: undefined,
+      },
+    });
+  };
+  migrateLegacyVision();
 
   /** Main → Runtime 的 Provider 配置源（initialize 握手与热更新共用） */
   const getProviderConfig = (): RuntimeProviderConfig => {
     const s = settings.get();
     const providerKeys: Partial<Record<ModelId, string>> = {};
-    for (const modelId of BUILTIN_MODEL_IDS) {
+    // 内置模型可被用户删除：只下发启用中的内置模型密钥（已删除模型不下发，
+    // 避免 Runtime 里出现"下拉看不到但 Auto 会路由过去"的幽灵模型）
+    const enabledBuiltin = (s.models.enabledBuiltin ?? [...BUILTIN_MODEL_IDS]) as ModelId[];
+    for (const modelId of enabledBuiltin) {
       const key = getProviderKey(modelId);
       if (key) providerKeys[modelId] = key;
     }
@@ -204,15 +239,25 @@ async function bootstrap(): Promise<void> {
     }
     // 视觉模型配置：settings 存 baseUrl/apiModel，密钥从钥匙串读；
     // 三要素齐全才下发（runtime 侧 visionConfig 为空时工具返回设置指引）
-    const vision = s.models.vision;
-    const visionApiKey = getVisionKey();
+    // 多模态模型：取默认项（未指定则取列表第一个）作为当前生效配置
+    const multimodal = s.models.multimodalModels ?? [];
+    const activeMultimodal =
+      multimodal.find((m) => m.id === s.models.defaultMultimodalId) ?? multimodal[0];
+    const visionApiKey = activeMultimodal ? getVisionKey(activeMultimodal.id) : '';
     const visionConfig =
-      vision?.baseUrl && vision.apiModel && visionApiKey
-        ? { baseUrl: vision.baseUrl, apiModel: vision.apiModel, apiKey: visionApiKey }
+      activeMultimodal?.baseUrl && activeMultimodal.apiModel && visionApiKey
+        ? {
+            baseUrl: activeMultimodal.baseUrl,
+            apiModel: activeMultimodal.apiModel,
+            apiKey: visionApiKey,
+            name: activeMultimodal.name,
+            ...(activeMultimodal.detail ? { detail: activeMultimodal.detail } : {}),
+          }
         : undefined;
     return {
       providerKeys,
       apiModelOverrides: s.models.apiModelOverrides ?? {},
+      apiBaseOverrides: s.models.apiBaseOverrides ?? {},
       customProviders: s.models.customProviders,
       ...(visionConfig ? { visionConfig } : {}),
     };
@@ -313,6 +358,7 @@ async function bootstrap(): Promise<void> {
     clearProviderKey,
     getVisionKey,
     setVisionKey,
+    listVisionIds: () => (settings.get().models.multimodalModels ?? []).map((m) => m.id),
     skillStore: new SkillStore(),
     getWindow: () => mainWindow,
   });

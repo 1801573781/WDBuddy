@@ -4,9 +4,8 @@
  * feature（task-list / chat / artifacts）之间禁止互相 import，事件经 shared/store 桥接。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { ModelId } from '@wdbuddy/shared-types';
-import { BUILTIN_MODEL_IDS, BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
-import { useAppStore } from '../shared/store';
+import { BUILTIN_MODEL_NAMES } from '@wdbuddy/shared-types';
+import { useAppStore, useVisibleModels } from '../shared/store';
 import { getApi } from '../shared/ipc';
 import { TaskSidebar } from '../features/task-list/TaskSidebar';
 import { HomeView } from '../features/home/HomeView';
@@ -114,7 +113,8 @@ function modelDisplayName(id: string): string {
 /** 自定义标题栏：WorkBuddy 式菜单（编辑/窗口/帮助）+ 模型下拉 + 窗口控制 */
 function TitleBar({ currentModel }: { currentModel: string }): React.ReactElement {
   const setOpenPanel = useAppStore((s) => s.setOpenPanel);
-  const customProviders = useAppStore((s) => s.customProviders);
+  // 只展示"启用中的内置模型 + 自定义 Provider"，内置模型可被用户删除
+  const models = useVisibleModels();
   const maxMode = useAppStore((s) => s.maxMode);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [maximized, setMaximized] = useState(false);
@@ -218,17 +218,16 @@ function TitleBar({ currentModel }: { currentModel: string }): React.ReactElemen
           title="模型选择"
         >
           <option value="auto">Auto（自动选择）</option>
-          {BUILTIN_MODEL_IDS.map((id) => (
-            <option key={id} value={id}>
-              {BUILTIN_MODEL_NAMES[id] ?? id}
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
             </option>
           ))}
-          {customProviders.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          <option value="custom:api">自定义 API…</option>
+          {currentModel !== 'auto' &&
+            !models.some((m) => m.id === currentModel) && (
+              <option value={currentModel}>{modelDisplayName(currentModel)}（不可用）</option>
+            )}
+          <option value="custom:api">＋ 添加自定义模型…</option>
         </select>
         {maxMode && (
           <span className="wb-badge wb-badge--info" title="增强上下文已开启：长文档/代码类任务自动使用更大上下文窗口模型">
